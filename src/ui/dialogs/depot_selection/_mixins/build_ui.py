@@ -491,11 +491,11 @@ class BuildUIMixin:
 
         # [ Inject DLC Data Only ]  [ Move to AT0-M ]  [ Close ]  [ Download Selected ]
         btn_h = 32
-        btn_min_w = 140
+        btn_min_w = 110
 
         self.inject_btn = QPushButton("Inject DLC Data Only")
         self.inject_btn.setFixedHeight(btn_h)
-        self.inject_btn.setMinimumWidth(btn_min_w)
+        self.inject_btn.setMinimumWidth(125)
         self.inject_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.inject_btn.setStyleSheet("""
             QPushButton {
@@ -523,7 +523,7 @@ class BuildUIMixin:
 
         self.move_to_atom_btn = QPushButton("Move to AT0-M")
         self.move_to_atom_btn.setFixedHeight(btn_h)
-        self.move_to_atom_btn.setMinimumWidth(btn_min_w)
+        self.move_to_atom_btn.setMinimumWidth(110)
         self.move_to_atom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.move_to_atom_btn.setStyleSheet("""
             QPushButton {
@@ -554,7 +554,7 @@ class BuildUIMixin:
         self.cancel_btn = QPushButton("Close")
         self.cancel_btn.setObjectName("cancel_button")
         self.cancel_btn.setFixedHeight(btn_h)
-        self.cancel_btn.setMinimumWidth(btn_min_w)
+        self.cancel_btn.setMinimumWidth(80)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.setStyleSheet("""
             QPushButton {
@@ -579,7 +579,7 @@ class BuildUIMixin:
         self.download_btn = QPushButton("Download Selected")
         self.download_btn.setObjectName("ok_button")
         self.download_btn.setFixedHeight(btn_h)
-        self.download_btn.setMinimumWidth(btn_min_w)
+        self.download_btn.setMinimumWidth(125)
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_btn.setStyleSheet(f"""
             QPushButton {{

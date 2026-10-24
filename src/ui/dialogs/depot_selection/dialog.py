@@ -135,8 +135,8 @@ class DepotSelectionDialog(
             dlc_catalog=kwargs.get("dlc_catalog") or {},
             editions=kwargs.get("editions"),
         )
-        self.resize(840, 580)
-        self.setMinimumSize(800, 560)
+        self.resize(700, 540)
+        self.setMinimumSize(620, 480)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Dialog)
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setStyleSheet("""
