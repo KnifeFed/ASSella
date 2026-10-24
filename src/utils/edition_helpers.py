@@ -309,9 +309,8 @@ def resolve_edition_depots(
     complete_depots = base_depots | dlc_depots
     editions: List[Dict[str, Any]] = []
 
-    # Fetch store packages from Steam store API
-    # A cold appdetails call measured 1.3-1.8 s, so a 1.5 s budget used to time
-    # out and silently leave the store tiers out of the menu.
+    # Fetch store packages from Steam Store API via GetItems.
+    # A single GetItems call returns both packages and bundle IDs for an app.
     store_pkgs = fetch_store_packages(aid_str, timeout=6.0) if include_store else []
     pkg_contents = {}
     if store_pkgs:
