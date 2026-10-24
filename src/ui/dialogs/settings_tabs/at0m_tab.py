@@ -123,7 +123,7 @@ def get_available_download_plugins() -> list[tuple[str, str]]:
     """Return available download plugins as list of (display_name, filename)."""
     options = [
         ("Standard (download.lua)", "download.lua"),
-        ("SpaceBunny 1.5", "spacebunny1.5.lua"),
+        ("SpaceBunny 1.7 beta", "SpaceBunny1.7beta.lua"),
     ]
     try:
         from utils.helpers import get_base_path
@@ -319,7 +319,7 @@ def create_at0m_tab(dialog) -> QWidget:
 
     layout.addWidget(cfg_card)
 
-    # -- 2. Deploy Card (3 Dynamic Buttons: Standard, SpaceBunny 1.5, Spliced Tickets) --
+    # -- 2. Deploy Card (3 Dynamic Buttons: Standard, SpaceBunny 1.7 beta, Spliced Tickets) --
     deploy_card, deploy_layout = dialog._create_card_frame("Deploy Lua Plugins")
     deploy_layout.setSpacing(8)
 
@@ -333,8 +333,8 @@ def create_at0m_tab(dialog) -> QWidget:
     dialog.btn_standard_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
     buttons_row.addWidget(dialog.btn_standard_plugin, 1)
 
-    # 2. SpaceBunny 1.5 button
-    dialog.btn_spacebunny_plugin = QPushButton("SpaceBunny 1.5")
+    # 2. SpaceBunny 1.7 beta button
+    dialog.btn_spacebunny_plugin = QPushButton("SpaceBunny 1.7 beta")
     dialog.btn_spacebunny_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
     buttons_row.addWidget(dialog.btn_spacebunny_plugin, 1)
 
@@ -434,7 +434,7 @@ def create_at0m_tab(dialog) -> QWidget:
     def _refresh_deploy_ui():
         is_custom = dialog.settings.value("custom_plugins_advanced", False, type=bool)
         std_state = get_plugin_state("download.lua")
-        space_state = get_plugin_state("spacebunny1.5.lua")
+        space_state = get_plugin_state("SpaceBunny1.7beta.lua")
         spliced_state = get_plugin_state("spliced-tickets.lua")
         active_dl = get_active_download_plugin()
         active_lower = (active_dl or "").lower()
@@ -449,7 +449,7 @@ def create_at0m_tab(dialog) -> QWidget:
             dialog.btn_standard_plugin.setStyleSheet(STYLE_DISABLED)
 
             dialog.btn_spacebunny_plugin.setEnabled(False)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.5")
+            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.7 beta")
             dialog.btn_spacebunny_plugin.setToolTip("Custom plugins option is enabled. Verification is bypassed.")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_DISABLED)
         elif is_std_active:
@@ -467,21 +467,21 @@ def create_at0m_tab(dialog) -> QWidget:
 
             # SpaceBunny is inactive (clickable to switch)
             dialog.btn_spacebunny_plugin.setEnabled(True)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.5")
-            dialog.btn_spacebunny_plugin.setToolTip("Click to activate SpaceBunny 1.5 (archives download.lua to .bak).")
+            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.7 beta")
+            dialog.btn_spacebunny_plugin.setToolTip("Click to activate SpaceBunny 1.7 beta (archives download.lua to .bak).")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
         elif is_space_active:
             # SpaceBunny is active
             if space_state == "up_to_date":
                 dialog.btn_spacebunny_plugin.setEnabled(False)
-                dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.5 (Active)")
-                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is currently active and verified against Cloudflare manifest.")
+                dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.7 beta (Active)")
+                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.7 beta is currently active and verified against Cloudflare manifest.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
             else:
                 dialog.btn_spacebunny_plugin.setEnabled(True)
-                dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.5 (Update)")
-                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is active but outdated. Click to update from Cloudflare.")
+                dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.7 beta (Update)")
+                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.7 beta is active but outdated. Click to update from Cloudflare.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             # Standard is inactive (clickable to switch)
@@ -498,8 +498,8 @@ def create_at0m_tab(dialog) -> QWidget:
             dialog.btn_standard_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             dialog.btn_spacebunny_plugin.setEnabled(True)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.5 (Missing)")
-            dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is not installed. Click to download and activate.")
+            dialog.btn_spacebunny_plugin.setText("SpaceBunny 1.7 beta (Missing)")
+            dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.7 beta is not installed. Click to download and activate.")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
         # 3. Spliced Tickets button state & style
@@ -567,7 +567,7 @@ def create_at0m_tab(dialog) -> QWidget:
         _deploy_single("download.lua", "Standard Plugin", dialog.btn_standard_plugin)
 
     def _on_spacebunny_clicked():
-        _deploy_single("spacebunny1.5.lua", "SpaceBunny 1.5", dialog.btn_spacebunny_plugin)
+        _deploy_single("SpaceBunny1.7beta.lua", "SpaceBunny 1.7 beta", dialog.btn_spacebunny_plugin)
 
     def _on_spliced_tickets_clicked():
         reply = ThemedMessageBox.warning(
@@ -608,6 +608,8 @@ def create_at0m_tab(dialog) -> QWidget:
         except Exception as e:
             logger.debug(f"[at0mTab] Could not update Plugins in SLS config: {e}")
         if checked:
+            from utils.yaml_config_manager import ensure_sls_plugin_config_sections
+            ensure_sls_plugin_config_sections(cfg_path)
             for p_file in ("download.lua", "spliced-tickets.lua"):
                 if get_plugin_state(p_file) == "missing":
                     deploy_sls_plugin(p_file)

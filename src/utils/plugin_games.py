@@ -788,8 +788,12 @@ def collect_game_depots_and_keys(
         except Exception as e:
             logger.debug(f"[PluginGames] Could not read cached Lua for {appid_str}: {e}")
 
-    zip_file = get_base_path() / "hubcap_manifests" / f"accela_fetch_{appid_str}.zip"
-    if zip_file.exists():
+    zip_files = [
+        get_base_path() / "hubcap_manifests" / f"accela_fetch_{appid_str}.zip",
+        Path.home() / ".local" / "share" / "ACCELA" / "hubcap_manifests" / f"accela_fetch_{appid_str}.zip",
+    ]
+    zip_file = next((candidate for candidate in zip_files if candidate.exists()), None)
+    if zip_file:
         try:
             with zipfile.ZipFile(zip_file, "r") as zf:
                 for name in zf.namelist():
@@ -1051,6 +1055,47 @@ def detect_migration_complications(game_data: Dict[str, Any], settings: Any = No
     }
 
 
+def can_use_atom_mode() -> Tuple[bool, str]:
+    """Check whether the environment is ready for AT0-M mode.
+
+    Verifies:
+      1. SLSsteam config.yaml exists.
+      2. Plugins: yes is enabled in config.yaml.
+      3. AdditionalDepots section exists in config.yaml.
+      4. DecryptionKeys section exists in config.yaml.
+      5. An active interceptor plugin (e.g. download.lua or SpaceBunny) is deployed.
+
+    Returns:
+      (True, "") if ready, or (False, "Reason...") if not.
+    """
+    from utils.yaml.core import get_user_config_path, _get_section_bounds
+    from utils.yaml.yaml_values import get_yaml_boolean_value
+    from utils.plugin_manager import get_active_interceptor_filename, is_plugin_check_bypassed
+
+    cfg_path = get_user_config_path()
+    if not cfg_path.exists():
+        return False, f"SLSsteam config not found at {cfg_path}"
+
+    if not get_yaml_boolean_value(cfg_path, "Plugins", default=False):
+        return False, "Plugins are not enabled in SLSsteam config ('Plugins: yes' missing or false)"
+
+    try:
+        content = cfg_path.read_text(encoding="utf-8")
+        if _get_section_bounds(content, "AdditionalDepots") is None:
+            return False, "Missing 'AdditionalDepots:' section in SLSsteam config"
+        if _get_section_bounds(content, "DecryptionKeys") is None:
+            return False, "Missing 'DecryptionKeys:' section in SLSsteam config"
+    except Exception as e:
+        return False, f"Could not read SLSsteam config: {e}"
+
+    if not is_plugin_check_bypassed():
+        interceptor = get_active_interceptor_filename()
+        if not interceptor:
+            return False, "No active download interceptor plugin (e.g. download.lua or SpaceBunny) is deployed"
+
+    return True, ""
+
+
 def migrate_game_to_atom(
     game_data: Dict[str, Any],
     settings: Any = None,
@@ -1060,13 +1105,15 @@ def migrate_game_to_atom(
     """
     Core single-game migration engine: converts an ASSella-managed game to AT0-M (Steam Native) mode.
     Handles:
+    - Preflight AT0-M readiness gate and Hubcap bundle check/auto-fetch
     - DLC-only mapped entitlements (only user-selected DLC depots, DLC AppIDs, DLC keys)
+    - Full game entitlements (all depots and keys from Hubcap bundle without smart depot filtering)
     - Reverting Goldberg emulator to genuine Steam binaries
     - Reverting EOS proxy to genuine DLL
     - In-place atomic config.yaml updates (preserving inode)
-    - Removal of .DepotDownloader / .ACCELA markers
-    - Steam ACF adoption with deferral tracking
+    - Removal of stale appmanifest ACF without calling SLSsteam install API pipe
     - Depotcache manifest pre-seeding
+    - Removal of .DepotDownloader / .ACCELA markers
     """
     from utils.settings import get_settings
 
@@ -1075,6 +1122,55 @@ def migrate_game_to_atom(
     appid_str = str(game_data.get("appid", "")).strip()
     if not appid_str or appid_str in ("0", "N/A", "unknown"):
         return {"success": False, "error": f"Invalid AppID '{appid_str}'"}
+
+    # 0. Pre-flight AT0-M readiness gate
+    ready, ready_err = can_use_atom_mode()
+    if not ready:
+        logger.error(f"[PluginGames] Cannot migrate {appid_str} to AT0-M: {ready_err}")
+        return {
+            "success": False,
+            "error": f"AT0-M environment not ready: {ready_err}",
+        }
+
+    # 0b. Pre-flight Hubcap manifest bundle check & auto-fetch
+    from utils.helpers import get_base_path
+    base_dir = get_base_path()
+    manifests_dirs = [
+        base_dir / "hubcap_manifests",
+        Path.home() / ".local" / "share" / "ACCELA" / "hubcap_manifests",
+    ]
+    bundle_found = None
+    for m_dir in manifests_dirs:
+        if m_dir.exists():
+            zips = list(m_dir.glob(f"accela_fetch_{appid_str}*.zip"))
+            if zips:
+                bundle_found = zips[0]
+                break
+
+    if not bundle_found:
+        logger.info(f"[PluginGames] Pre-flight: No local Hubcap bundle found for {appid_str}. Fetching...")
+        try:
+            from core import morrenus_api
+            fetched_zip, fetch_err = morrenus_api.download_manifest(appid_str, force_update=True)
+            if not fetched_zip or not os.path.exists(fetched_zip):
+                err_msg = fetch_err or "Unknown error"
+                if "404" in err_msg:
+                    detail = f"Manifest bundle for AppID {appid_str} was not found on server (HTTP 404)."
+                elif "timeout" in err_msg.lower() or "timed out" in err_msg.lower():
+                    detail = f"Network timed out while fetching manifest bundle for AppID {appid_str}."
+                else:
+                    detail = f"Failed to download manifest bundle for AppID {appid_str}: {err_msg}"
+                logger.error(f"[PluginGames] {detail} Aborting AT0-M migration; ASSella markers kept intact.")
+                return {
+                    "success": False,
+                    "error": f"{detail}\n\nPre-seeding manifests into depotcache is required for Steam to adopt files without CDN 401 errors. Migration was aborted.",
+                }
+        except Exception as e:
+            logger.error(f"[PluginGames] Manifest fetch exception for {appid_str}: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to fetch required manifest bundle for {appid_str}: {e}\n\nMigration was aborted.",
+            }
 
     game_name = game_data.get("game_name") or f"App {appid_str}"
     installdir = game_data.get("installdir") or game_data.get("game_name") or ""
@@ -1143,19 +1239,12 @@ def migrate_game_to_atom(
             except Exception as e:
                 logger.warning(f"[PluginGames] DLC emergency key fetch failed: {e}")
     else:
+        # Full game: inject all depots and keys from Hubcap bundle without smart depot filtering
         dlc_appids = []
         depot_ids, decryption_keys, depot_names = collect_game_depots_and_keys(
             appid_str, game_data=game_data, allow_hubcap_fetch=True
         )
-        from utils.dlc_helpers import resolve_depot_scope
 
-        explicit_scope = game_data.get("selected_depots")
-        scope = explicit_scope if explicit_scope is not None else (
-            get_saved_depot_selection(appid_str)
-            or game_data.get("metadata", {}).get("selected_depots_list")
-        )
-        if scope is not None:
-            depot_ids, _ = resolve_depot_scope(appid_str, depot_ids, extra_scope=scope)
 
     # 3. Guard against unkeyed depots (prevent DepotWithoutKey)
     valid_keys_and_redists = set(decryption_keys.keys()) | SHARED_REDISTS
@@ -1220,7 +1309,7 @@ def migrate_game_to_atom(
     settings_obj.setValue(f"exclude_from_update_all/{appid_str}", True)
 
     # 7. Adopt Steam appmanifest ACF
-    from utils.steam_acf import find_appmanifest_path, ensure_acf_has_installed_depots, ACF_DEFERRED
+    from utils.steam_acf import find_appmanifest_path
 
     # The ACF may only advertise the depots registration actually mounted: a
     # depot the config editor refused is not served by SLSsteam, and listing it
@@ -1331,7 +1420,6 @@ def batch_convert_games_to_atom(
 
     migrated: List[Dict[str, Any]] = []
     failed: List[Dict[str, Any]] = []
-    acf_pending: List[Dict[str, Any]] = []
     markers_retained: List[Dict[str, Any]] = []
     total = len(games)
 
@@ -1361,8 +1449,6 @@ def batch_convert_games_to_atom(
                 "depots": res.get("depots_count", 0),
                 "keys": res.get("keys_count", 0),
             })
-            if res.get("acf_deferred"):
-                acf_pending.append({"appid": appid_str, "name": game_name})
             if res.get("marker_retained"):
                 markers_retained.append({
                     "appid": appid_str,
@@ -1378,8 +1464,6 @@ def batch_convert_games_to_atom(
             })
 
     result: Dict[str, Any] = {"migrated": migrated, "failed": failed}
-    if acf_pending:
-        result["acf_pending"] = acf_pending
     if markers_retained:
         result["markers_retained"] = markers_retained
     return result

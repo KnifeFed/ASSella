@@ -1719,7 +1719,11 @@ class LibraryActionsMixin:
 
         acf = os.path.join(path, "steamapps", f"appmanifest_{appid}.acf")
         acf_existed = os.path.exists(acf)
-        is_at0m = game_data.get("update_status") in ("at0m", "vapor", "at0-m")
+        from utils.plugin_games import is_plugin_game
+        is_at0m = (
+            game_data.get("update_status") in ("at0m", "vapor", "at0-m")
+            or is_plugin_game(appid)
+        )
 
         # AT0M mode: delete ACF directly and let Steam/SLSsteam recreate it.
         # In-place ACF editing is fragile; Steam's pipeline generates correct
@@ -1785,7 +1789,18 @@ class LibraryActionsMixin:
         if sys.platform == "linux":
             try:
                 from utils.slssteam_integration import install_via_sls, _experimental_mode_enabled, patch_acf_via_sls
-                if _experimental_mode_enabled():
+                if is_at0m:
+                    try:
+                        from core.native_steam.native_steam_handoff import sync_manifests_to_depotcache
+                        sync_manifests_to_depotcache(appid, path)
+                    except Exception as s_err:
+                        logger.debug(f"Depotcache sync during fix for {appid}: {s_err}")
+                    install_via_sls(
+                        appid=appid,
+                        game_name=game_data.get("game_name", ""),
+                        library_path=path,
+                    )
+                elif _experimental_mode_enabled():
                     install_via_sls(
                         appid=appid,
                         game_name=game_data.get("game_name", ""),
@@ -1796,8 +1811,8 @@ class LibraryActionsMixin:
             except Exception as sls_err:
                 logger.warning(f"SLS install error during fix for {appid}: {sls_err}")
 
-        # Fallback: regenerate ACF if manifest still missing after failed repair
-        if not os.path.exists(acf):
+        # Fallback: regenerate ACF if manifest still missing after failed repair (only for non-AT0-M games)
+        if not is_at0m and not os.path.exists(acf):
             try:
                 from utils.steam_manifest import write_acf_file
                 info = None

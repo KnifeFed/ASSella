@@ -1768,26 +1768,29 @@ def init_slsonline_logic(dialog) -> None:
                     dialog.sls_tile.sub_lbl.setStyleSheet(f"font-size: 7.5pt; font-style: italic; color: {text_color}; opacity: 0.85; background: transparent;")
 
             def _refresh_sls_state():
-                global_all_online = bool(config.exists() and get_fake_appid(config, "0") == "480")
                 existing = get_fake_appid(config, dialog.appid) if config.exists() else None
+                global_all_online = bool(config.exists() and get_fake_appid(config, "0") == "480")
 
                 dialog.sls_tile.blockSignals(True)
-                if global_all_online:
-                    dialog.sls_tile.setChecked(True)
-                    _apply_split_style(True)
-                    dialog.sls_input.setText(existing or "480")
-                    dialog.sls_input_container.setVisible(True)
-                    dialog.sls_tile.setToolTip("SLSonline is enabled globally for all games (0: 480). Click to manage in Settings → SLS.")
-                elif existing:
+                if existing:
                     dialog.sls_tile.setChecked(True)
                     _apply_split_style(True)
                     dialog.sls_input.setText(existing)
+                    dialog.sls_input.setReadOnly(False)
                     dialog.sls_input_container.setVisible(True)
-                    dialog.sls_tile.setToolTip("")
+                    dialog.sls_tile.setToolTip("Game-specific SLSonline Fake AppID")
+                elif global_all_online:
+                    dialog.sls_tile.setChecked(True)
+                    _apply_split_style(True)
+                    dialog.sls_input.setText("480")
+                    dialog.sls_input.setReadOnly(True)
+                    dialog.sls_input_container.setVisible(True)
+                    dialog.sls_tile.setToolTip("SLSonline is enabled globally for all unowned games (0: 480). Manage in Settings → SLS.")
                 else:
                     dialog.sls_tile.setChecked(False)
                     _apply_split_style(False)
                     dialog.sls_input.setText("480")
+                    dialog.sls_input.setReadOnly(False)
                     dialog.sls_input_container.setVisible(False)
                     dialog.sls_tile.setToolTip("")
                 dialog.sls_tile.blockSignals(False)
@@ -1797,7 +1800,8 @@ def init_slsonline_logic(dialog) -> None:
 
             def _tog(checked):
                 cur_global = bool(config.exists() and get_fake_appid(config, "0") == "480")
-                if cur_global:
+                cur_existing = get_fake_appid(config, dialog.appid) if config.exists() else None
+                if cur_global and not cur_existing:
                     dialog.sls_tile.blockSignals(True)
                     dialog.sls_tile.setChecked(True)
                     _apply_split_style(True)
@@ -1809,6 +1813,7 @@ def init_slsonline_logic(dialog) -> None:
 
                 _apply_split_style(checked)
                 dialog.sls_input_container.setVisible(checked)
+                dialog.sls_input.setReadOnly(False)
                 fid = dialog.sls_input.text().strip() or "480"
                 name = dialog.game_data.get("game_name", "Unknown")
                 if checked:
@@ -1827,7 +1832,7 @@ def init_slsonline_logic(dialog) -> None:
                 update_eos_btn_state(dialog)
 
             def _fin():
-                if dialog.sls_tile.isChecked():
+                if dialog.sls_tile.isChecked() and not dialog.sls_input.isReadOnly():
                     fid = dialog.sls_input.text().strip() or "480"
                     name = dialog.game_data.get("game_name", "Unknown")
                     cur = get_fake_appid(config, dialog.appid)
@@ -2391,8 +2396,17 @@ def on_move_to_vapor_clicked(dialog) -> None:
         if warn_box != ThemedMessageBox.StandardButton.Yes:
             return
 
-    # Check for complications before moving
-    from utils.plugin_games import detect_migration_complications, migrate_game_to_atom
+    # Check for AT0-M readiness and complications before moving
+    from utils.plugin_games import can_use_atom_mode, detect_migration_complications, migrate_game_to_atom
+
+    can_atom, atom_err = can_use_atom_mode()
+    if not can_atom:
+        ThemedMessageBox.warning(
+            dialog,
+            "AT0-M Setup Incomplete",
+            f"Cannot move to AT0-M mode:\n\n{atom_err}\n\nPlease check your AT0-M and SLSsteam configuration in Settings.",
+        )
+        return
 
     complications = detect_migration_complications(game_data, dialog.settings)
     if complications.get("has_complications"):

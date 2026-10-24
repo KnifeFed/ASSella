@@ -19,6 +19,7 @@ from utils.helpers import get_base_path
 from utils.settings import get_settings
 from utils.yaml_config_manager import (
     ensure_plugins_enabled,
+    ensure_sls_plugin_config_sections,
     ensure_smart_tickets_enabled,
     get_sls_plugins_dirs,
     is_slssteam_plugins_enabled,
@@ -323,7 +324,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
         (success: bool, skipped: bool, message: str)
         - skipped=True if all targets already had the exact matching SHA-256 or were already present when only_if_missing is True.
     """
-    ensure_plugins_enabled()
+    ensure_sls_plugin_config_sections()
 
     # spliced-tickets.lua requires SmartTickets: 0x1 (SteamDRM) in SLS config
     if filename == "spliced-tickets.lua":
@@ -352,13 +353,6 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
             Path.home() / ".local" / "share" / "ACCELA" / "plugins" / filename,
             Path.home() / ".config" / "SLSsteam" / "plugins" / filename,
         ]
-        # Also check for spacebunnny spelling variations if looking for spacebunny
-        if filename == "spacebunny1.5.lua":
-            alt_locations.extend([
-                Path.home() / ".local" / "share" / "ACCELA" / "plugins" / "spacebunnny1.5.lua",
-                Path.home() / ".config" / "SLSsteam" / "plugins" / "spacebunnny1.5beta.lua",
-            ])
-
         found_local = None
         for alt in alt_locations:
             if alt.is_file():
@@ -472,7 +466,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
 
 def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = False) -> Tuple[bool, List[str]]:
     """Deploy the selected download interceptor and spliced-tickets plugins."""
-    ensure_plugins_enabled()
+    ensure_sls_plugin_config_sections()
 
     active_interceptor = (
         get_active_interceptor_filename()
