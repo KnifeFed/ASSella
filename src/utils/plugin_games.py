@@ -1270,12 +1270,21 @@ def migrate_game_to_atom(
         adopted_depots = [str(d) for d in candidate_depots if str(d) != appid_str]
         adopted_keys = dict(candidate_keys)
 
-    acf_deferred = False
     acf_path = find_appmanifest_path(game_data, appid_str)
-    if acf_path:
-        acf_status = ensure_acf_has_installed_depots(acf_path, appid_str, adopted_depots, game_data)
-        if acf_status == ACF_DEFERRED:
-            acf_deferred = True
+    if acf_path and os.path.exists(acf_path):
+        # Delete the old ACF during transfer to let Steam create a fresh one.
+        # Direct ACF editing is fragile; Steam's own pipeline generates correct
+        # manifests when it discovers the game in the common folder.
+        try:
+            os.remove(acf_path)
+            logger.info(
+                f"[PluginGames] Deleted old ACF {acf_path} for {appid_str}; "
+                "Steam will recreate it on next scan."
+            )
+        except Exception as e:
+            logger.warning(
+                f"[PluginGames] Could not delete ACF {acf_path}: {e}"
+            )
 
     # 6. Sync manifests to central depotcache
     try:
@@ -1286,20 +1295,9 @@ def migrate_game_to_atom(
     except Exception as e:
         logger.warning(f"[PluginGames] Depotcache sync failed for {appid_str}: {e}")
 
-    # 7. Record acf_pending if deferred, and retire ASSella markers
+    # 7. Retire ASSella markers
     marker_retained = False
     marker_retained_reasons: List[str] = []
-    if acf_deferred:
-        lib = load_plugin_library()
-        record = lib.setdefault(appid_str, {})
-        record["acf_pending"] = True
-        if not save_plugin_library(lib):
-            logger.error(
-                f"[PluginGames] Failed to save acf_pending state for {appid_str}; "
-                "keeping ASSella marker so migration can be retried."
-            )
-            marker_retained = True
-            marker_retained_reasons.append("plugin library could not save the deferred ACF state")
 
     if not marker_retained:
         _remove_accela_markers(install_path)
@@ -1309,7 +1307,7 @@ def migrate_game_to_atom(
         "success": True,
         "appid": appid_str,
         "name": game_name,
-        "acf_deferred": acf_deferred,
+        "acf_deleted": bool(acf_path),
         "marker_retained": marker_retained,
         "marker_retained_reason": "; ".join(marker_retained_reasons),
         "depots_count": len(adopted_depots),

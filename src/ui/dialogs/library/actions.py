@@ -1719,9 +1719,23 @@ class LibraryActionsMixin:
 
         acf = os.path.join(path, "steamapps", f"appmanifest_{appid}.acf")
         acf_existed = os.path.exists(acf)
+        is_at0m = game_data.get("update_status") in ("at0m", "vapor", "at0-m")
 
-        # First try: repair the ACF in-place if it exists and is broken
-        if acf_existed:
+        # AT0M mode: delete ACF directly and let Steam/SLSsteam recreate it.
+        # In-place ACF editing is fragile; Steam's pipeline generates correct
+        # manifests when it discovers the game.
+        if acf_existed and is_at0m:
+            if not self._confirm_action(
+                "Confirm", "Remove manifest file? Steam will recreate it."
+            ):
+                return
+            try:
+                os.remove(acf)
+                logger.info(f"[Library] Deleted ACF {acf} for {appid} (AT0M mode)")
+            except Exception as e:
+                logger.warning(f"Could not remove manifest file {acf}: {e}")
+        # First try: repair the ACF in-place if it exists and is broken (ASSella mode)
+        elif acf_existed:
             try:
                 from utils.steam_acf import ensure_acf_has_installed_depots
 
