@@ -61,25 +61,55 @@ class BuildUIMixin:
         title_layout.setSpacing(4)
         title_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        if dlc_mode:
-            display_title = (
-                f"<b>{self.game_name}</b> <span style='color: rgba(255, 255, 255, 0.55); font-size: 9.5pt;'>({self.app_id})</span>"
-                if self.app_id and str(self.app_id) not in ("0", "unknown", "None", "") and f"({self.app_id})" not in str(self.game_name)
-                else f"<b>{self.game_name}</b>"
-            )
-            self.title_label = QLabel(display_title)
-            self.title_label.setStyleSheet("font-size: 11pt; color: #FFFFFF;")
-        else:
-            plain_title = (
-                str(self.game_name)
-                if not self.app_id
-                or str(self.app_id) in ("0", "unknown", "None", "")
-                or f"({self.app_id})" in str(self.game_name)
-                else f"{self.game_name} ({self.app_id})"
-            )
-            self.title_label = QLabel(plain_title)
-            self.title_label.setStyleSheet("font-size: 13pt; font-weight: bold; color: #FFFFFF;")
-        title_layout.addWidget(self.title_label)
+        title_hlayout = QHBoxLayout()
+        title_hlayout.setSpacing(6)
+        title_hlayout.setContentsMargins(0, 0, 0, 0)
+
+        clean_name = str(self.game_name)
+        if self.app_id and f"({self.app_id})" in clean_name:
+            clean_name = clean_name.replace(f"({self.app_id})", "").strip()
+
+        title_font_size = "11pt" if dlc_mode else "13pt"
+        self.title_label = QLabel(clean_name)
+        self.title_label.setStyleSheet(f"font-size: {title_font_size}; font-weight: bold; color: #FFFFFF;")
+        title_hlayout.addWidget(self.title_label)
+
+        if self.app_id and str(self.app_id) not in ("0", "unknown", "None", ""):
+            aid_str = str(self.app_id).strip()
+            self.appid_btn = QPushButton(f"({aid_str})")
+            self.appid_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.appid_btn.setToolTip(f"Click to copy AppID ({aid_str})")
+            aid_font_size = "9.5pt" if dlc_mode else "11.5pt"
+            self.appid_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    color: rgba(255, 255, 255, 0.55);
+                    font-style: italic;
+                    font-size: {aid_font_size};
+                    padding: 0px 2px;
+                    text-align: left;
+                }}
+                QPushButton:hover {{
+                    color: #FFFFFF;
+                    text-decoration: underline;
+                }}
+                QPushButton:pressed {{
+                    color: #4CAF50;
+                }}
+            """)
+
+            def _copy_appid():
+                from PyQt6.QtWidgets import QApplication, QToolTip
+                QApplication.clipboard().setText(aid_str)
+                pos = self.appid_btn.mapToGlobal(self.appid_btn.rect().bottomLeft())
+                QToolTip.showText(pos, f"✓ Copied AppID: {aid_str}", self.appid_btn, msecDisplayTime=2000)
+
+            self.appid_btn.clicked.connect(_copy_appid)
+            title_hlayout.addWidget(self.appid_btn)
+
+        title_hlayout.addStretch()
+        title_layout.addLayout(title_hlayout)
 
         # Badges row: Branch, Build ID, Selection summary
         badges_row = QHBoxLayout()
@@ -109,13 +139,13 @@ class BuildUIMixin:
             badges_row.addWidget(branch_lbl)
 
             self.branch_combo = QComboBox()
-            self.branch_combo.setFixedHeight(26)
+            self.branch_combo.setFixedHeight(24)
             self.branch_combo.setMinimumWidth(110)
             self.branch_combo.setStyleSheet(f"""
                 QComboBox {{
                     background-color: rgba(255, 255, 255, 0.06);
                     border: 1px solid rgba(255, 255, 255, 0.16);
-                    border-radius: 4px;
+                    border-radius: 6px;
                     color: #FFFFFF;
                     padding: 1px 10px;
                     font-size: 8.5pt;
@@ -144,14 +174,30 @@ class BuildUIMixin:
             badges_row.addWidget(self.branch_combo)
         else:
             self.branch_combo = None
-            branch_lbl = QLabel(f"Branch: <b style='color: #FFFFFF;'>{self.branch or 'public'}</b>")
-            branch_lbl.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.6);")
-            badges_row.addWidget(branch_lbl)
+            self.branch_btn = QPushButton(f"Branch: {self.branch or 'public'}")
+            self.branch_btn.setFixedHeight(24)
+            self.branch_btn.setMinimumWidth(100)
+            self.branch_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            self.branch_btn.setEnabled(False)
+            self.branch_btn.setToolTip("No alternative branches available")
+            self.branch_btn.setStyleSheet("""
+                QPushButton, QPushButton:disabled {
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.40);
+                    font-size: 8.5pt;
+                    font-weight: 600;
+                    padding: 2px 12px;
+                }
+            """)
+            badges_row.addWidget(self.branch_btn)
 
         badges_row.addSpacing(4)
 
         display_bid = self.current_build_id or "Latest"
         self.builds_btn = QPushButton(f"Build: {display_bid}")
+        self.builds_btn.setToolTip(f"Build ID: {display_bid} (Click to switch builds)")
         self.builds_btn.setFixedHeight(24)
         self.builds_btn.setMinimumWidth(100)
         self.builds_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
@@ -187,11 +233,91 @@ class BuildUIMixin:
             self._setup_storage_buttons(storage_row)
             title_layout.addLayout(storage_row)
         else:
-            display_path = self.preferred_library_path or "Detected from Steam library"
-            self.path_lbl = QLabel(f"Install Path: <span style='color: rgba(255, 255, 255, 0.8); font-family: monospace;'>{display_path}</span>")
-            self.path_lbl.setToolTip(self.preferred_library_path or "Steam default directory")
-            self.path_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.5); font-size: 8pt;")
-            title_layout.addWidget(self.path_lbl)
+            # Check if game is detected in Steam library (already installed)
+            aid_str = str(getattr(self, "app_id", "") or "").strip()
+            is_installed_in_steam = False
+            detected_lib = ""
+            try:
+                from core.steam_helpers import get_steam_libraries
+                from pathlib import Path
+                if aid_str and aid_str not in ("0", "None", "unknown"):
+                    for lib in get_steam_libraries():
+                        acf_p = Path(lib) / "steamapps" / f"appmanifest_{aid_str}.acf"
+                        if acf_p.is_file():
+                            is_installed_in_steam = True
+                            detected_lib = str(lib)
+                            break
+                        # Also check if installed in common directory with metadata.json
+                        common_dir = Path(lib) / "steamapps" / "common"
+                        if common_dir.is_dir():
+                            for item in common_dir.iterdir():
+                                if item.is_dir() and (item / ".DepotDownloader" / "metadata.json").is_file():
+                                    try:
+                                        import json
+                                        with open(item / ".DepotDownloader" / "metadata.json", "r", encoding="utf-8") as mf:
+                                            mdata = json.load(mf)
+                                            if str(mdata.get("appid")) == aid_str:
+                                                is_installed_in_steam = True
+                                                detected_lib = str(lib)
+                                                break
+                                    except Exception:
+                                        pass
+                                if is_installed_in_steam:
+                                    break
+                        if is_installed_in_steam:
+                            break
+            except Exception:
+                pass
+
+            # If preferred_library_path is explicitly provided and matches a steam library or has installation
+            if not is_installed_in_steam and self.preferred_library_path:
+                try:
+                    from core.steam_helpers import get_steam_libraries
+                    norm_pref = os.path.realpath(self.preferred_library_path)
+                    for lib in get_steam_libraries():
+                        if os.path.realpath(lib) == norm_pref:
+                            acf_test = Path(lib) / "steamapps" / f"appmanifest_{aid_str}.acf"
+                            if acf_test.is_file():
+                                is_installed_in_steam = True
+                                detected_lib = str(lib)
+                                break
+                except Exception:
+                    pass
+
+            if is_installed_in_steam:
+                is_owned = False
+                try:
+                    from core.steam_helpers import get_owned_steam_appids
+                    if aid_str and aid_str in get_owned_steam_appids():
+                        is_owned = True
+                except Exception:
+                    pass
+
+                if is_owned:
+                    status_text = "<span style='color: #4CAF50; font-weight: 600;'>Owned - Installed</span>"
+                    status_tip = f"Owned on Steam and detected in library: {detected_lib or 'Steam'}"
+                else:
+                    status_text = "<span style='color: #58a6ff; font-weight: 600;'>Installed</span>"
+                    status_tip = f"Installed and detected in library: {detected_lib or 'Steam'}"
+
+                self.path_lbl = QLabel(status_text)
+                self.path_lbl.setToolTip(status_tip)
+                self.path_lbl.setStyleSheet("font-size: 8.5pt;")
+                title_layout.addWidget(self.path_lbl)
+            else:
+                default_lib = ""
+                try:
+                    from core.steam_helpers import get_steam_libraries
+                    libs = get_steam_libraries()
+                    if libs:
+                        default_lib = libs[0]
+                except Exception:
+                    pass
+                display_path = self.preferred_library_path or default_lib or "Steam default directory"
+                self.path_lbl = QLabel(f"Install Path: <span style='color: rgba(255, 255, 255, 0.8); font-family: monospace;'>{display_path}</span>")
+                self.path_lbl.setToolTip(display_path)
+                self.path_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.5); font-size: 8pt;")
+                title_layout.addWidget(self.path_lbl)
 
         header_layout.addLayout(title_layout, 1)
         layout.addLayout(header_layout)

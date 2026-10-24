@@ -102,8 +102,8 @@ class SingleDepotSelectionDialog(QDialog):
 
         # Resolve the single depot ID and metadata
         if self.depots:
-            self.single_depot_id = str(next(iter(self.depots.keys())))
-            self.single_depot_data = self.depots.get(self.single_depot_id, {})
+            from ui.dialogs.depot_selection.rules import get_effective_single_depot
+            self.single_depot_id, self.single_depot_data = get_effective_single_depot(self.depots, self.app_id)
             if not isinstance(self.single_depot_data, dict):
                 self.single_depot_data = {}
         else:
@@ -199,14 +199,53 @@ class SingleDepotSelectionDialog(QDialog):
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
 
-        display_title = (
-            f"{self.game_name} ({self.app_id})"
-            if self.app_id and self.app_id not in ("0", "unknown", "None", "") and f"({self.app_id})" not in str(self.game_name)
-            else self.game_name
-        )
-        self.title_label = QLabel(display_title)
+        title_hlayout = QHBoxLayout()
+        title_hlayout.setSpacing(6)
+        title_hlayout.setContentsMargins(0, 0, 0, 0)
+
+        clean_name = str(self.game_name)
+        if self.app_id and f"({self.app_id})" in clean_name:
+            clean_name = clean_name.replace(f"({self.app_id})", "").strip()
+
+        self.title_label = QLabel(clean_name)
         self.title_label.setStyleSheet("font-size: 12pt; font-weight: bold; color: #FFFFFF;")
-        title_layout.addWidget(self.title_label)
+        title_hlayout.addWidget(self.title_label)
+
+        if self.app_id and str(self.app_id) not in ("0", "unknown", "None", ""):
+            aid_str = str(self.app_id).strip()
+            self.appid_btn = QPushButton(f"({aid_str})")
+            self.appid_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.appid_btn.setToolTip(f"Click to copy AppID ({aid_str})")
+            self.appid_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    color: rgba(255, 255, 255, 0.55);
+                    font-style: italic;
+                    font-size: 11pt;
+                    padding: 0px 2px;
+                    text-align: left;
+                }
+                QPushButton:hover {
+                    color: #FFFFFF;
+                    text-decoration: underline;
+                }
+                QPushButton:pressed {
+                    color: #4CAF50;
+                }
+            """)
+
+            def _copy_appid_single():
+                from PyQt6.QtWidgets import QApplication, QToolTip
+                QApplication.clipboard().setText(aid_str)
+                pos = self.appid_btn.mapToGlobal(self.appid_btn.rect().bottomLeft())
+                QToolTip.showText(pos, f"✓ Copied AppID: {aid_str}", self.appid_btn, msecDisplayTime=2000)
+
+            self.appid_btn.clicked.connect(_copy_appid_single)
+            title_hlayout.addWidget(self.appid_btn)
+
+        title_hlayout.addStretch()
+        title_layout.addLayout(title_hlayout)
 
         # --- Branch & Builds Row ---
         controls_row = QHBoxLayout()
@@ -271,14 +310,29 @@ class SingleDepotSelectionDialog(QDialog):
             controls_row.addWidget(self.branch_combo)
         else:
             self.branch_combo = None
-            branch_lbl = QLabel(f"Branch: <b style='color: #FFFFFF;'>{self.branch or 'public'}</b>")
-            branch_lbl.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.7);")
-            controls_row.addWidget(branch_lbl)
+            self.branch_btn = QPushButton(f"Branch: {self.branch or 'public'}")
+            self.branch_btn.setFixedHeight(28)
+            self.branch_btn.setMinimumWidth(110)
+            self.branch_btn.setEnabled(False)
+            self.branch_btn.setToolTip("No alternative branches available")
+            self.branch_btn.setStyleSheet("""
+                QPushButton, QPushButton:disabled {
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.40);
+                    font-size: 8.5pt;
+                    font-weight: 600;
+                    padding: 2px 12px;
+                }
+            """)
+            controls_row.addWidget(self.branch_btn)
 
         controls_row.addSpacing(4)
 
         display_bid = self.current_build_id or "Latest"
         self.builds_btn = QPushButton(f"Build: {display_bid}")
+        self.builds_btn.setToolTip(f"Build ID: {display_bid} (Click to switch builds)")
         self.builds_btn.setFixedHeight(28)
         self.builds_btn.setMinimumWidth(110)
         self.builds_btn.setCursor(Qt.CursorShape.PointingHandCursor)

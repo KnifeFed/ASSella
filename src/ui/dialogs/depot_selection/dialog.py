@@ -95,7 +95,9 @@ class DepotSelectionDialog(
         # Only route to SingleDepotSelectionDialog if not DLC-only and there are NO missing depots from Hubcap.
         # If DLCs/depots are missing, full DepotSelectionDialog MUST be shown so the user sees
         # the greyed out missing depots and their statuses.
-        if not is_dlc and not missing and (is_single or (isinstance(depots, dict) and len(depots) == 1)):
+        from ui.dialogs.depot_selection.rules import is_effectively_single_depot
+        effective_single = is_single or (isinstance(depots, dict) and is_effectively_single_depot(depots, missing))
+        if not is_dlc and not missing and effective_single:
             from ui.dialogs.single_depot_dialog import SingleDepotSelectionDialog
             return SingleDepotSelectionDialog(*args, **kwargs)
 

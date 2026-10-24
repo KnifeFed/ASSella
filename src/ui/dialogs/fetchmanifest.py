@@ -1563,8 +1563,10 @@ class FetchManifestDialog(QDialog):
             appid = str(parsed_data.get("appid", ""))
             missing_depots = parsed_data.get("missing_depots_from_hubcap") or []
             
+            from ui.dialogs.depot_selection.rules import is_effectively_single_depot, get_effective_single_depot
+
             selected_depots = None
-            is_single = (len(depots) == 1 and not missing_depots)
+            is_single = is_effectively_single_depot(depots, missing_depots)
 
             show_timer = (is_single and auto_skip and has_default_dl)
             open_dialog = False
@@ -1573,7 +1575,8 @@ class FetchManifestDialog(QDialog):
                 dlg = SingleDepotTimerDialog(self, "Single Depot Option", "Game has only one depot.\n\nProceed to download and add it to queue?", seconds=3)
                 res = dlg.exec()
                 if res == SingleDepotTimerDialog.ACTION_YES:
-                    selected_depots = list(depots.keys())
+                    single_id, _ = get_effective_single_depot(depots, appid)
+                    selected_depots = [single_id] if single_id else list(depots.keys())
                     metadata["library_path"] = default_dl
                 elif res == SingleDepotTimerDialog.ACTION_MANUAL:
                     open_dialog = True
