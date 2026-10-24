@@ -273,8 +273,8 @@ class AppUpdateManager(QObject):
                     if tmp_path is not None:
                         try:
                             Path(tmp_path).unlink(missing_ok=True)
-                        except OSError:
-                            pass
+                        except OSError as e:
+                            logger.debug(f"Could not remove tmp_path {tmp_path} on cancel: {e}")
                     return
 
                 if delta_ok and tmp_path is not None:

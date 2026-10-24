@@ -215,7 +215,8 @@ def _discover_depots_from_disk(acf_path: str, appid: str) -> List[str]:
                         depot_id = parts[-1]  # last part after split is depot ID
                         if depot_id.isdigit() and depot_id != appid:
                             discovered.append(depot_id)
-                except Exception:
+                except Exception as ex:
+                    logger.debug(f"[SteamACF] Error parsing manifest filename {manifest_file}: {ex}")
                     continue
     except Exception as e:
         logger.debug(f"[SteamACF] Could not discover depots from disk: {e}")

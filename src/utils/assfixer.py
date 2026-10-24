@@ -179,8 +179,8 @@ def get_bundled_or_cached_template() -> Optional[str]:
             txt = cache_path.read_text(encoding="utf-8")
             if txt and len(txt) > 200:
                 return txt
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[AssFixer] Could not read cached template from {cache_path}: {e}")
 
     try:
         from utils.helpers import get_base_path
@@ -189,8 +189,8 @@ def get_bundled_or_cached_template() -> Optional[str]:
             txt = bundled.read_text(encoding="utf-8")
             if txt and len(txt) > 200:
                 return txt
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[AssFixer] Could not load bundled template via get_base_path: {e}")
 
     cand = Path(__file__).resolve().parent.parent / "res" / "sls_config_template.yaml"
     if cand.is_file():
@@ -198,8 +198,8 @@ def get_bundled_or_cached_template() -> Optional[str]:
             txt = cand.read_text(encoding="utf-8")
             if txt and len(txt) > 200:
                 return txt
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[AssFixer] Could not load candidate template from {cand}: {e}")
     return None
 
 
