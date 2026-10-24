@@ -1249,13 +1249,26 @@ def migrate_game_to_atom(
                 for d, key in candidate_keys.items()
                 if str(d) in allowed_key_ids and editor.contains_key(d)
             }
-    except Exception:
+    except Exception as e:
         logger.exception(
-            f"[PluginGames] Could not verify mounted depots/keys for {appid_str}; "
-            "the appmanifest will not claim unverified content."
+            f"[PluginGames] Could not verify mounted depots/keys for {appid_str}: {e}; "
+            "falling back to known depots for ACF adoption."
         )
-        adopted_depots = []
-        adopted_keys = {}
+        # Even if config verification failed, try with known depots — the ACF
+        # repair logic will discover missing depots from disk anyway.
+        adopted_depots = [str(d) for d in candidate_depots if str(d) != appid_str]
+        adopted_keys = dict(candidate_keys)
+
+    # If config verification passed but all depots were filtered out
+    # (e.g. depot IDs don't match what SLSsteam expects), fall back to
+    # known depots so the ACF can still be repaired.
+    if not adopted_depots and candidate_depots:
+        logger.warning(
+            f"[PluginGames] No depots passed config verification for {appid_str}; "
+            f"using {len(candidate_depots)} known depot(s) as fallback for ACF repair."
+        )
+        adopted_depots = [str(d) for d in candidate_depots if str(d) != appid_str]
+        adopted_keys = dict(candidate_keys)
 
     acf_deferred = False
     acf_path = find_appmanifest_path(game_data, appid_str)

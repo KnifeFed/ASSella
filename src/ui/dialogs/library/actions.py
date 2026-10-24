@@ -1720,7 +1720,39 @@ class LibraryActionsMixin:
         acf = os.path.join(path, "steamapps", f"appmanifest_{appid}.acf")
         acf_existed = os.path.exists(acf)
 
+        # First try: repair the ACF in-place if it exists and is broken
         if acf_existed:
+            try:
+                from utils.steam_acf import ensure_acf_has_installed_depots
+
+                depot_ids = game_data.get("depot_ids") or []
+                status = ensure_acf_has_installed_depots(
+                    acf, appid, depot_ids, game_data
+                )
+                if status == "written":
+                    logger.info(f"[Library] In-place ACF repair succeeded for {appid}")
+                    ThemedMessageBox.information(
+                        self, "Done",
+                        f"Installation repaired for {game_data.get('game_name', appid)}. "
+                        "Steam should now recognize it as fully installed."
+                    )
+                    if hasattr(self, "game_manager") and self.game_manager:
+                        try:
+                            self.game_manager.scan_steam_libraries_async()
+                        except Exception as e:
+                            logger.debug(f"[Library] Steam library rescan request failed: {e}")
+                    return
+                elif status == "skipped":
+                    # ACF is already valid — nothing to do
+                    ThemedMessageBox.information(
+                        self, "Done",
+                        f"{game_data.get('game_name', appid)} ACF looks healthy — nothing to fix."
+                    )
+                    return
+            except Exception as e:
+                logger.warning(f"[Library] In-place ACF repair failed for {appid}: {e}")
+
+            # If in-place repair didn't work, ask user before deleting
             if not self._confirm_action(
                 "Confirm", "Remove manifest file? Steam will re-verify files."
             ):
@@ -1750,7 +1782,7 @@ class LibraryActionsMixin:
             except Exception as sls_err:
                 logger.warning(f"SLS install error during fix for {appid}: {sls_err}")
 
-        # Fallback ACF generation if manifest still missing
+        # Fallback: regenerate ACF if manifest still missing after failed repair
         if not os.path.exists(acf):
             try:
                 from utils.steam_manifest import write_acf_file
