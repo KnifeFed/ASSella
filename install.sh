@@ -123,6 +123,9 @@ StartupWMClass=ASSella
 MimeType=x-scheme-handler/accela;
 EOL
     chmod 0644 "$desktop_tmp"
+    # Unlink any existing entry/symlink so older coreutils mv (e.g. <= 8.32 on Ubuntu 22.04)
+    # does not fail with ELOOP ("Too many levels of symbolic links") when stat'ing DEST.
+    rm -f "$PRIMARY_DESKTOP_ENTRY"
     mv -f "$desktop_tmp" "$PRIMARY_DESKTOP_ENTRY"
     DESKTOP_TMP=""
     test -f "$PRIMARY_DESKTOP_ENTRY"
@@ -144,6 +147,7 @@ install_application_icon() {
     if curl -fsSL --retry 3 --retry-delay 2 -o "$icon_tmp" \
         "https://raw.githubusercontent.com/niwia/ASSella/main/src/res/logo/icon.png"; then
         chmod 0644 "$icon_tmp"
+        rm -f "$PRIMARY_ICON_PATH"
         mv -f "$icon_tmp" "$PRIMARY_ICON_PATH"
         ICON_TMP=""
     else
@@ -770,6 +774,7 @@ do_install() {
     esac
 
     # Promote verified download into place
+    rm -f "$INSTALL_DESTINATION/ASSella.AppImage"
     if ! mv -f "$DL_TMP" "$INSTALL_DESTINATION/ASSella.AppImage"; then
         echo -e "${RED}[ERROR] Failed to move verified binary into place.${NC}"
         rm -f "$DL_TMP"
