@@ -314,6 +314,9 @@ class TaskManager(
             pre_selected = (self.current_job_metadata or {}).get("selected_depots_list")
             if pre_selected:
                 self.game_data["selected_depots_list"] = pre_selected
+                pre_dlcs = (self.current_job_metadata or {}).get("selected_dlc_appids")
+                if pre_dlcs is not None:
+                    self.game_data["selected_dlc_appids"] = pre_dlcs
                 library_dest = (self.current_job_metadata or {}).get("library_path") or (self.game_data or {}).get("library_path")
                 # Persist confirmed pre-selection so future updates recall it
                 appid = str((self.game_data or {}).get("appid", ""))
@@ -477,6 +480,9 @@ class TaskManager(
             selected_depots = (
                 self.main_window.ui_state.depot_dialog.get_selected_depots()
             )
+            selected_dlc_data = (
+                self.main_window.ui_state.depot_dialog.get_selected_dlc_data()
+            )
             selected_files = (
                 self.main_window.ui_state.depot_dialog.get_selected_files()
             )
@@ -485,6 +491,7 @@ class TaskManager(
             )
             if self.game_data:
                 self.game_data["selected_depots_list"] = selected_depots
+                self.game_data["selected_dlc_appids"] = list(selected_dlc_data.keys())
                 if selected_files:
                     self.game_data["selected_files_list"] = selected_files
 

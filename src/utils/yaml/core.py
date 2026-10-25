@@ -719,8 +719,13 @@ class BatchConfigEditor:
 
                 if not is_known_dlc and app_id:
                     try:
-                        from utils.dlc_helpers import is_dlc_depot
-                        if is_dlc_depot(depot_id_str, base_appid=app_id):
+                        from utils.dlc_helpers import build_app_to_depots_map, is_dlc_depot
+                        app_map = build_app_to_depots_map(app_id)
+                        for dlc_aid, dset in app_map.items():
+                            if str(dlc_aid) != str(app_id) and (depot_id_str == str(dlc_aid) or depot_id_str in dset):
+                                is_known_dlc = True
+                                break
+                        if not is_known_dlc and is_dlc_depot(depot_id_str, base_appid=app_id):
                             is_known_dlc = True
                     except Exception:
                         pass

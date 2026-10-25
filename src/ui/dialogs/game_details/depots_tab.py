@@ -1392,6 +1392,9 @@ def init_depots_tab(dialog) -> None:
 
                 # Cleanup safeguard: if base appid was accidentally in live AdditionalDepots, prune it
                 if appid_str in state["live_depots"]:
+                    logger.warning(
+                        f"[DepotsTab] Pruned base AppID '{appid_str}' from AdditionalDepots for {game_name}"
+                    )
                     editor.remove_depot(appid_str, check_shared=False)
                     removed_count += 1
 
@@ -1426,6 +1429,9 @@ def init_depots_tab(dialog) -> None:
                 # Standard locked sync: automatically add missing entries
                 # Cleanup safeguard: if base appid was accidentally in live AdditionalDepots, prune it
                 if appid_str in state["live_depots"]:
+                    logger.warning(
+                        f"[DepotsTab] Pruned base AppID '{appid_str}' from AdditionalDepots for {game_name}"
+                    )
                     editor.remove_depot(appid_str, check_shared=False)
                     removed_count += 1
 

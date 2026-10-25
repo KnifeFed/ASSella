@@ -2004,6 +2004,11 @@ class LibraryActionsMixin:
                                 lib = load_plugin_library()
                                 rec = lib.get(appid, {})
                                 d_names = {d_id: depots.get(d_id, {}).get("desc", "") for d_id in chosen}
+                                dlc_appids = rec.get("dlc_appids", [])
+                                if not dlc_appids:
+                                    from utils.dlc_helpers import get_all_dlcs_for_app
+                                    discovered_dlcs = get_all_dlcs_for_app(appid, game_data, allow_network=False)
+                                    dlc_appids = [str(d["dlc_appid"]) for d in discovered_dlcs if d.get("dlc_appid")]
                                 register_plugin_game(
                                     appid=appid,
                                     name=game_data.get("game_name", ""),
@@ -2011,7 +2016,7 @@ class LibraryActionsMixin:
                                     decryption_keys=rec.get("keys", {}),
                                     installdir=game_data.get("install_dir", ""),
                                     depot_names=d_names,
-                                    dlc_appids=rec.get("dlc_appids", []),
+                                    dlc_appids=dlc_appids,
                                     is_dlc_only=bool(rec.get("dlc_only", False)),
                                 )
                             except Exception as _e:
@@ -3001,6 +3006,8 @@ class LibraryActionsMixin:
 
                 if depot_dialog.exec():
                     selected_depots = depot_dialog.get_selected_depots()
+                    selected_dlc_data = depot_dialog.get_selected_dlc_data()
+                    metadata["selected_dlc_appids"] = list(selected_dlc_data.keys())
                     selected_storage = depot_dialog.get_selected_storage()
                     if selected_storage:
                         metadata["library_path"] = selected_storage

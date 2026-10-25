@@ -2304,6 +2304,7 @@ class MainWindow(QMainWindow):
                     if parsed_data and parsed_data.get("depots"):
                         depots = parsed_data.get("depots")
                         selected_depots = None
+                        selected_dlc_appids = None
                         val = settings.value(f"depot_selection/{appid}", "", type=str)
                         should_prompt = True
                         prev_selected = None
@@ -2333,7 +2334,7 @@ class MainWindow(QMainWindow):
                             else:
                                 # Depot dialog must run on the main thread
                                 from ui.dialogs.depotselection import DepotSelectionDialog
-                                result_holder = [None]
+                                result_holder = [None, None]
                                 done_event = threading.Event()
 
                                 # Bind every loop-scoped value as a default
@@ -2373,6 +2374,9 @@ class MainWindow(QMainWindow):
                                         )
                                         if depot_dialog.exec():
                                             _result_holder[0] = depot_dialog.get_selected_depots()
+                                            _result_holder[1] = list(
+                                                depot_dialog.get_selected_dlc_data().keys()
+                                            )
                                     except Exception as err:
                                         logger.error(
                                             f"Error displaying depot selection dialog for {_appid} "
@@ -2399,6 +2403,7 @@ class MainWindow(QMainWindow):
                                     selected_depots = None
                                 else:
                                     selected_depots = result_holder[0]
+                                    selected_dlc_appids = result_holder[1] or []
 
                         if not selected_depots:
                             logger.info(f"Update All: skipping {name} — depot selection cancelled or no depots selected")
@@ -2419,6 +2424,8 @@ class MainWindow(QMainWindow):
                             logger.warning(f"Failed to cache depot selection: {e}")
 
                         metadata["selected_depots_list"] = selected_depots
+                        if selected_dlc_appids is not None:
+                            metadata["selected_dlc_appids"] = selected_dlc_appids
 
                     self.job_queue.add_job(local_path, metadata)
                     queued += 1

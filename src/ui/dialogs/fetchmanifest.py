@@ -1693,6 +1693,8 @@ class FetchManifestDialog(QDialog):
                     return
 
                 selected_depots = depot_dialog.get_selected_depots()
+                selected_dlc_data = depot_dialog.get_selected_dlc_data()
+                metadata["selected_dlc_appids"] = list(selected_dlc_data.keys())
                 selected_storage = depot_dialog.get_selected_storage()
                 if selected_storage:
                     metadata["library_path"] = selected_storage
@@ -1932,4 +1934,3 @@ class FetchManifestDialog(QDialog):
                     logger.debug(f"Error stopping {runner_name}: {e}")
 
         super().closeEvent(event)
-
