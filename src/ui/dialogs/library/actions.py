@@ -1107,7 +1107,7 @@ class LibraryActionsMixin:
             except Exception as e:
                 logger.warning(f"Error parsing cached depot selection: {e}")
 
-        if not cached_selected and isinstance(installed_depots, list):
+        if not cached_selected and isinstance(installed_depots, list) and not is_dlc_only:
             cached_selected = [str(d) for d in installed_depots]
 
         # A verify or DLC-only action must always show the dialog, overriding the cache reuse above.

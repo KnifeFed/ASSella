@@ -233,7 +233,15 @@ class DepotTableMixin:
                 default_eds = self._multi_platform_editions.get(self._default_platform, [])
                 highest_ed = default_eds[0] if default_eds else None
                 if highest_ed and highest_ed.get("depot_ids"):
-                    pre_selected_set = set(highest_ed["depot_ids"])
+                    if getattr(self, "_dlc_only_mode", False):
+                        pre_selected_set = set()
+                        for did in highest_ed["depot_ids"]:
+                            d_data = self.depots.get(did) or self.depots.get(int(did) if did.isdigit() else 0) or {}
+                            desc = str(d_data.get("desc") or d_data.get("name") or "")
+                            if is_dlc_depot(did, desc=desc, base_appid=str(self.app_id), depot_meta=d_data) and not is_base_game_main_depot(did, desc, str(self.app_id)):
+                                pre_selected_set.add(str(did))
+                    else:
+                        pre_selected_set = set(highest_ed["depot_ids"])
                     if hasattr(self, "edition_button"):
                         short = highest_ed.get("short_name", "Complete")
                         if len(self._available_platforms) > 1:
@@ -769,7 +777,10 @@ class DepotTableMixin:
             self.status_summary_label.setText(summary_text)
 
         if hasattr(self, "download_btn"):
-            self.download_btn.setText(f"Download Selected ({sel_count}/{total_count})")
+            if total_count > 0:
+                self.download_btn.setText(f"Download ({sel_count}/{total_count})")
+            else:
+                self.download_btn.setText("Download")
             self.download_btn.setEnabled(sel_count > 0)
         if hasattr(self, "inject_btn"):
             self.inject_btn.setText(f"Inject DLC Data Only ({dlcdata_sel})")

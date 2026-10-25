@@ -23,14 +23,20 @@ class HeaderImageMixin:
         self.fetcher.start()
 
     def on_image_fetched(self, image_data):
-        if image_data:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            self._apply_header_pixmap(pixmap)
-        else:
-            # Image fetch failed (404), try to get the correct URL from Steam API
-            logger.debug("Image fetch failed, attempting to refresh from API")
-            self._trigger_header_refresh()
+        try:
+            if image_data:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(image_data) and not pixmap.isNull():
+                    self._apply_header_pixmap(pixmap)
+                else:
+                    self._trigger_header_refresh()
+            else:
+                # Image fetch failed (404), try to get the correct URL from Steam API
+                logger.debug("Image fetch failed, attempting to refresh from API")
+                self._trigger_header_refresh()
+        except Exception as e:
+            logger.debug(f"Error handling fetched image: {e}")
+            self._show_no_image()
 
     def _trigger_header_refresh(self):
         """
@@ -73,33 +79,50 @@ class HeaderImageMixin:
 
     def _on_retry_image_fetched(self, image_data):
         """Handle the retry image fetch result."""
-        if image_data:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            self._apply_header_pixmap(pixmap)
-            logger.info("Successfully loaded header image after refresh")
-        else:
+        try:
+            if image_data:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(image_data) and not pixmap.isNull():
+                    self._apply_header_pixmap(pixmap)
+                    logger.info("Successfully loaded header image after refresh")
+                else:
+                    self._show_no_image()
+            else:
+                self._show_no_image()
+        except Exception as e:
+            logger.debug(f"Error handling retry fetched image: {e}")
             self._show_no_image()
 
     def _apply_header_pixmap(self, pixmap: QPixmap) -> None:
-        target_w = self.header_label.width() if hasattr(self, "header_label") and self.header_label.width() > 0 else 184
-        target_h = self.header_label.height() if hasattr(self, "header_label") and self.header_label.height() > 0 else 86
-        scaled = pixmap.scaled(
-            target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
-        )
-        self.header_label.setPixmap(scaled)
-        self.header_label.setStyleSheet("border-radius: 6px;")
+        try:
+            if not hasattr(self, "header_label") or self.header_label is None or pixmap.isNull():
+                self._show_no_image()
+                return
+            target_w = self.header_label.width() if self.header_label.width() > 0 else 184
+            target_h = self.header_label.height() if self.header_label.height() > 0 else 86
+            scaled = pixmap.scaled(
+                target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+            )
+            self.header_label.setPixmap(scaled)
+            self.header_label.setStyleSheet("border-radius: 6px;")
+        except Exception as e:
+            logger.debug(f"Error applying header pixmap: {e}")
+            self._show_no_image()
 
     def _show_no_image(self):
         """Show fallback text when image is not available."""
-        self.header_label.setText("No Image")
-        self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.header_label.setStyleSheet(
-            "background-color: rgba(255, 255, 255, 0.039); "
-            "color: rgba(255, 255, 255, 0.314); "
-            "font-size: 8pt; "
-            "border-radius: 6px;"
-        )
+        try:
+            if hasattr(self, "header_label") and self.header_label is not None:
+                self.header_label.setText("No Image")
+                self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.header_label.setStyleSheet(
+                    "background-color: rgba(255, 255, 255, 0.039); "
+                    "color: rgba(255, 255, 255, 0.314); "
+                    "font-size: 8pt; "
+                    "border-radius: 6px;"
+                )
+        except Exception:
+            pass
 
     def _cleanup_fetcher(self, _data: bytes) -> None:
         if hasattr(self, "fetcher") and self.fetcher is not None:

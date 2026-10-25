@@ -422,46 +422,6 @@ class DepotSelectionDialog(
         """Returns whether DLC configuration was written to SLSsteam config."""
         return getattr(self, "_config_written", False)
 
-    def _handle_inject_btn_clicked(self):
-        """Injects all currently checked DLCs into DlcData in SLSsteam config.yaml."""
-        checked_dlcs = self.get_selected_dlc_data()
-        if not checked_dlcs:
-            ThemedMessageBox.warning(
-                self,
-                "No DLCs Selected",
-                "Please select at least one DLC to inject into SLSsteam config.",
-            )
-            return
-
-        try:
-            from utils.yaml.dlc import add_dlc_data_batch
-            from utils.yaml_config_manager import get_user_config_path, remove_additional_app
-
-            config_path = get_user_config_path()
-            if not config_path or not config_path.exists():
-                raise RuntimeError("SLSsteam config.yaml could not be found.")
-
-            add_dlc_data_batch(config_path, self.app_id, checked_dlcs)
-            if getattr(self, "_dlc_only_mode", False):
-                remove_additional_app(config_path, self.app_id)
-                get_settings().setValue(f"dlc_only_mode/{self.app_id}", True)
-
-            self._injection_only = True
-            self._config_written = True
-            ThemedMessageBox.information(
-                self,
-                "DLC Data Injected",
-                f"✓ Successfully injected {len(checked_dlcs)} DLC(s) into DlcData for '{self.game_name}'.\n\n"
-                f"SLSsteam will now explicitly report these DLCs as owned.",
-            )
-            super().accept()
-        except Exception as exc:
-            logger.warning(f"[DepotSelectionDialog] Could not inject DLC data: {exc}", exc_info=True)
-            ThemedMessageBox.warning(
-                self,
-                "Injection Failed",
-                f"Failed writing DLC data to SLSsteam config.yaml:\n\n{exc}",
-            )
 
     def get_selected_files(self):
         """Returns the list of custom checked relative file paths."""
@@ -590,6 +550,40 @@ class DepotSelectionDialog(
             if not self.isMinimized():
                 self.raise_()
                 self.activateWindow()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        try:
+            from PyQt6.QtGui import QPainter, QColor, QRadialGradient
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            w = self.width()
+            center_x = w * 0.5
+            center_y = 65.0
+            radius = max(w * 0.65, 320.0)
+
+            grad = QRadialGradient(center_x, center_y, radius)
+            accent_hex = getattr(self, "accent_color", "#C06C84") or "#C06C84"
+            base_col = QColor(accent_hex)
+            if not base_col.isValid():
+                base_col = QColor(192, 108, 132)
+
+            # Subtle atmospheric glow (~10% center, ~4% mid, 0% edge)
+            center_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 26)
+            mid_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 10)
+            outer_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 0)
+
+            grad.setColorAt(0.0, center_col)
+            grad.setColorAt(0.45, mid_col)
+            grad.setColorAt(1.0, outer_col)
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(grad)
+            painter.drawRect(self.rect())
+            painter.end()
+        except Exception:
+            pass
 
     def showEvent(self, a0):
         super().showEvent(a0)

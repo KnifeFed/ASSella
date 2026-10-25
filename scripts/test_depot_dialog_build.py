@@ -166,7 +166,7 @@ def main() -> int:
     check("25799969" in dlg.builds_btn.text(), "current build id on the Build button")
 
     check(bool(find_buttons(dlg, "Download") or find_buttons(dlg, "OK")), "Download button present")
-    check(bool(find_buttons(dlg, "Close") or find_buttons(dlg, "Cancel")), "Close button present")
+    check(dlg.title_bar is not None and getattr(dlg.title_bar, "close_btn", None) is not None, "Titlebar close button present")
 
     check(dlg.title_bar is not None, "titlebar created")
     check(dlg.anchor_row == -1, "anchor_row initialised")

@@ -21,6 +21,11 @@ from PyQt6.QtWidgets import (
 
 from utils.settings import get_settings
 
+import logging
+from ui.dialogs.themed_message_box import ThemedMessageBox
+
+logger = logging.getLogger(__name__)
+
 from ui.dialogs.depot_selection.views import (
     DepotCheckboxDelegate,
     DepotHeaderView,
@@ -101,9 +106,10 @@ class BuildUIMixin:
 
             def _copy_appid():
                 from PyQt6.QtWidgets import QApplication, QToolTip
+                from PyQt6.QtCore import QRect
                 QApplication.clipboard().setText(aid_str)
                 pos = self.appid_btn.mapToGlobal(self.appid_btn.rect().bottomLeft())
-                QToolTip.showText(pos, f"✓ Copied AppID: {aid_str}", self.appid_btn, msecDisplayTime=2000)
+                QToolTip.showText(pos, f"✓ Copied AppID: {aid_str}", self.appid_btn, QRect(), 2000)
 
             self.appid_btn.clicked.connect(_copy_appid)
             title_hlayout.addWidget(self.appid_btn)
@@ -206,13 +212,7 @@ class BuildUIMixin:
         self.builds_btn.clicked.connect(self._on_builds_clicked)
         badges_row.addWidget(self.builds_btn)
 
-        if dlc_mode:
-            self.summary_lbl = QLabel("Selected: 0 of 0 depots (0 B)")
-            self.summary_lbl.setStyleSheet(f"font-size: 8.5pt; font-weight: 600; color: {self.accent_color};")
-            badges_row.addWidget(self.summary_lbl)
-        else:
-            self.summary_lbl = None
-
+        self.summary_lbl = None
         self.show_hidden_chk = None
         self.smart_select_btn = None
 
@@ -230,7 +230,23 @@ class BuildUIMixin:
             storage_lbl = QLabel("Install Location:")
             storage_lbl.setStyleSheet("font-size: 8.5pt; font-weight: 600; color: rgba(255, 255, 255, 0.7);")
             storage_row.addWidget(storage_lbl)
-            self._setup_storage_buttons(storage_row)
+
+            disp_path = self.preferred_library_path or ""
+            if not disp_path:
+                try:
+                    from core.steam_helpers import get_steam_libraries
+                    libs = get_steam_libraries()
+                    if libs:
+                        disp_path = libs[0]
+                except Exception:
+                    pass
+            if not disp_path:
+                disp_path = "Steam default directory"
+
+            path_text = QLabel(disp_path)
+            path_text.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.85); font-weight: 500;")
+            storage_row.addWidget(path_text)
+            storage_row.addStretch()
             title_layout.addLayout(storage_row)
         else:
             # Check if game is detected in Steam library (already installed)
@@ -519,52 +535,56 @@ class BuildUIMixin:
             self.edition_button.clicked.connect(self._show_edition_menu)
             button_layout.addWidget(self.edition_button, 1)
 
-            from utils.dlc_helpers import has_game_dlcs
-            has_dlc = has_game_dlcs(str(self.app_id), self.depots)
-
-            self._dlc_only_btn = QPushButton("DLC Only")
-            self._dlc_only_btn.setFixedHeight(28)
-            self._dlc_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            self._dlc_only_btn.setCheckable(True)
-
-            if getattr(self, "lock_dlc_only", False):
-                self._dlc_only_btn.setChecked(True)
-                self._dlc_only_btn.setEnabled(False)
-                self._dlc_only_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
-                self._dlc_only_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 0.04) !important;
-                        color: rgba(255, 255, 255, 0.45) !important;
-                        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                        border-radius: 6px;
-                        padding: 4px 12px;
-                        font-size: 8.5pt;
-                        font-weight: 500;
-                    }
-                """)
-                self._dlc_only_btn.setToolTip("DLC-Only mode is locked for this installation.")
-                self._dlc_only_mode = True
-            elif not has_dlc:
-                self._dlc_only_btn.setEnabled(False)
-                self._dlc_only_btn.setChecked(False)
-                self._dlc_only_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 0.03) !important;
-                        color: rgba(255, 255, 255, 0.25) !important;
-                        border: 1px solid rgba(255, 255, 255, 0.06) !important;
-                        border-radius: 6px;
-                        padding: 4px 12px;
-                        font-size: 8.5pt;
-                    }
-                """)
-                self._dlc_only_btn.setToolTip("DLC-Only mode is unavailable because this title has no DLC.")
-                self._dlc_only_mode = False
+            dlc_mode = bool(getattr(self, "_dlc_only_mode", False))
+            if dlc_mode:
+                self._dlc_only_btn = None
             else:
-                self._dlc_only_btn.setChecked(self._dlc_only_mode)
-                self._refresh_dlc_only_style()
-                self._dlc_only_btn.toggled.connect(self._on_dlc_only_toggled)
+                from utils.dlc_helpers import has_game_dlcs
+                has_dlc = has_game_dlcs(str(self.app_id), self.depots)
 
-            button_layout.addWidget(self._dlc_only_btn, 1)
+                self._dlc_only_btn = QPushButton("DLC Only")
+                self._dlc_only_btn.setFixedHeight(28)
+                self._dlc_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                self._dlc_only_btn.setCheckable(True)
+
+                if getattr(self, "lock_dlc_only", False):
+                    self._dlc_only_btn.setChecked(True)
+                    self._dlc_only_btn.setEnabled(False)
+                    self._dlc_only_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
+                    self._dlc_only_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: rgba(255, 255, 255, 0.04) !important;
+                            color: rgba(255, 255, 255, 0.45) !important;
+                            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                            border-radius: 6px;
+                            padding: 4px 12px;
+                            font-size: 8.5pt;
+                            font-weight: 500;
+                        }
+                    """)
+                    self._dlc_only_btn.setToolTip("DLC-Only mode is locked for this installation.")
+                    self._dlc_only_mode = True
+                elif not has_dlc:
+                    self._dlc_only_btn.setEnabled(False)
+                    self._dlc_only_btn.setChecked(False)
+                    self._dlc_only_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: rgba(255, 255, 255, 0.03) !important;
+                            color: rgba(255, 255, 255, 0.25) !important;
+                            border: 1px solid rgba(255, 255, 255, 0.06) !important;
+                            border-radius: 6px;
+                            padding: 4px 12px;
+                            font-size: 8.5pt;
+                        }
+                    """)
+                    self._dlc_only_btn.setToolTip("DLC-Only mode is unavailable because this title has no DLC.")
+                    self._dlc_only_mode = False
+                else:
+                    self._dlc_only_btn.setChecked(self._dlc_only_mode)
+                    self._refresh_dlc_only_style()
+                    self._dlc_only_btn.toggled.connect(self._on_dlc_only_toggled)
+
+                button_layout.addWidget(self._dlc_only_btn, 1)
 
             browse_files_button = QPushButton("Browse Files...")
             browse_files_button.setFixedHeight(28)
@@ -607,15 +627,12 @@ class BuildUIMixin:
         bottom_bar.setContentsMargins(0, 6, 0, 0)
         bottom_bar.setSpacing(8)
 
-        # Status / Selection summary on the left
-        self.status_summary_label = QLabel()
-        self.status_summary_label.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.6);")
-        self.status_summary_label.setVisible(dlc_mode)
-        bottom_bar.addWidget(self.status_summary_label)
+        # Selection summary is not shown in bottom left (status cleaned up)
+        self.status_summary_label = None
 
         bottom_bar.addStretch(1)
 
-        # [ Inject DLC Data Only ]  [ Move to AT0-M ]  [ Close ]  [ Download Selected ]
+        # [ Inject DLC Data Only ]  [ Move to AT0-M ]  [ Download ]
         btn_h = 32
         btn_min_w = 110
 
@@ -677,32 +694,13 @@ class BuildUIMixin:
             self.move_to_atom_btn.clicked.connect(self._handle_move_to_atom_clicked)
         self.move_to_atom_btn.setVisible(dlc_mode or bool(getattr(self, "_is_atom_mode", False)))
 
-        self.cancel_btn = QPushButton("Close")
-        self.cancel_btn.setObjectName("cancel_button")
-        self.cancel_btn.setFixedHeight(btn_h)
-        self.cancel_btn.setMinimumWidth(80)
-        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.06);
-                color: rgba(255, 255, 255, 0.8);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 5px;
-                padding: 0 14px;
-                font-size: 8.5pt;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.12);
-                color: #FFFFFF;
-            }
-        """)
-        self.cancel_btn.clicked.connect(self.reject)
+        # Close button in bottom buttons removed per UX requirement (dialog relies on window titlebar close button)
+        self.cancel_btn = None
 
         from utils.color_utils import get_best_foreground_color
         text_hex = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
 
-        self.download_btn = QPushButton("Download Selected")
+        self.download_btn = QPushButton("Download")
         self.download_btn.setObjectName("ok_button")
         self.download_btn.setFixedHeight(btn_h)
         self.download_btn.setMinimumWidth(125)
@@ -731,6 +729,46 @@ class BuildUIMixin:
 
         bottom_bar.addWidget(self.inject_btn)
         bottom_bar.addWidget(self.move_to_atom_btn)
-        bottom_bar.addWidget(self.cancel_btn)
         bottom_bar.addWidget(self.download_btn)
         content_widget.addLayout(bottom_bar)
+
+    def _handle_inject_btn_clicked(self):
+        """Injects all currently checked DLCs into DlcData in SLSsteam config.yaml."""
+        checked_dlcs = self.get_selected_dlc_data()
+        if not checked_dlcs:
+            ThemedMessageBox.warning(
+                self,
+                "No DLCs Selected",
+                "Please select at least one DLC to inject into SLSsteam config.",
+            )
+            return
+
+        try:
+            from utils.yaml.dlc import add_dlc_data_batch
+            from utils.yaml_config_manager import get_user_config_path, remove_additional_app
+
+            config_path = get_user_config_path()
+            if not config_path or not config_path.exists():
+                raise RuntimeError("SLSsteam config.yaml could not be found.")
+
+            add_dlc_data_batch(config_path, self.app_id, checked_dlcs)
+            if getattr(self, "_dlc_only_mode", False):
+                remove_additional_app(config_path, self.app_id)
+                get_settings().setValue(f"dlc_only_mode/{self.app_id}", True)
+
+            self._injection_only = True
+            self._config_written = True
+            ThemedMessageBox.information(
+                self,
+                "DLC Data Injected",
+                f"✓ Successfully injected {len(checked_dlcs)} DLC(s) into DlcData for '{self.game_name}'.\n\n"
+                f"SLSsteam will now explicitly report these DLCs as owned.",
+            )
+            self.accept()
+        except Exception as exc:
+            logger.warning(f"[DepotSelectionDialog] Could not inject DLC data: {exc}", exc_info=True)
+            ThemedMessageBox.warning(
+                self,
+                "Injection Failed",
+                f"Failed writing DLC data to SLSsteam config.yaml:\n\n{exc}",
+            )

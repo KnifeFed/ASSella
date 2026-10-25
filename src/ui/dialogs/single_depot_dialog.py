@@ -760,23 +760,31 @@ class SingleDepotSelectionDialog(QDialog):
         self.fetcher.start()
 
     def _on_image_fetched(self, image_data):
-        if image_data:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            self.header_label.setPixmap(pixmap)
-        else:
+        try:
+            if image_data:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(image_data) and not pixmap.isNull():
+                    self.header_label.setPixmap(pixmap)
+                else:
+                    self._show_no_image()
+            else:
+                self._show_no_image()
+        except Exception:
             self._show_no_image()
 
     def _show_no_image(self):
-        from PyQt6.QtGui import QPainter, QColor, QFont
-        pixmap = QPixmap(110, 52)
-        pixmap.fill(QColor(25, 25, 35))
-        painter = QPainter(pixmap)
-        painter.setPen(QColor(255, 255, 255, 100))
-        painter.setFont(QFont("Arial", 8))
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "No Image")
-        painter.end()
-        self.header_label.setPixmap(pixmap)
+        try:
+            from PyQt6.QtGui import QPainter, QColor, QFont
+            pixmap = QPixmap(110, 52)
+            pixmap.fill(QColor(25, 25, 35))
+            painter = QPainter(pixmap)
+            painter.setPen(QColor(255, 255, 255, 100))
+            painter.setFont(QFont("Arial", 8))
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "No Image")
+            painter.end()
+            self.header_label.setPixmap(pixmap)
+        except Exception:
+            pass
 
     def _on_select_files_clicked(self):
         if not self.depot_checkbox.isChecked():
@@ -1108,6 +1116,40 @@ class SingleDepotSelectionDialog(QDialog):
             if not self.isMinimized():
                 self.raise_()
                 self.activateWindow()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        try:
+            from PyQt6.QtGui import QPainter, QColor, QRadialGradient
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            w = self.width()
+            center_x = w * 0.5
+            center_y = 65.0
+            radius = max(w * 0.65, 320.0)
+
+            grad = QRadialGradient(center_x, center_y, radius)
+            accent_hex = getattr(self, "accent_color", "#C06C84") or "#C06C84"
+            base_col = QColor(accent_hex)
+            if not base_col.isValid():
+                base_col = QColor(192, 108, 132)
+
+            # Subtle atmospheric glow (~10% center, ~4% mid, 0% edge)
+            center_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 26)
+            mid_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 10)
+            outer_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 0)
+
+            grad.setColorAt(0.0, center_col)
+            grad.setColorAt(0.45, mid_col)
+            grad.setColorAt(1.0, outer_col)
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(grad)
+            painter.drawRect(self.rect())
+            painter.end()
+        except Exception:
+            pass
 
     def showEvent(self, a0):
         super().showEvent(a0)
