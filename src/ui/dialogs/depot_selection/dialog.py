@@ -564,10 +564,14 @@ class DepotSelectionDialog(
             radius = max(w * 0.65, 320.0)
 
             grad = QRadialGradient(center_x, center_y, radius)
-            accent_hex = getattr(self, "accent_color", "#C06C84") or "#C06C84"
-            base_col = QColor(accent_hex)
-            if not base_col.isValid():
-                base_col = QColor(192, 108, 132)
+
+            # Prioritize extracted thumbnail color for ambient background, falling back to accent_color
+            base_col = getattr(self, "_ambient_color", None)
+            if not base_col or not isinstance(base_col, QColor) or not base_col.isValid():
+                accent_hex = getattr(self, "accent_color", "#C06C84") or "#C06C84"
+                base_col = QColor(accent_hex)
+                if not base_col.isValid():
+                    base_col = QColor(192, 108, 132)
 
             # Subtle atmospheric glow (~10% center, ~4% mid, 0% edge)
             center_col = QColor(base_col.red(), base_col.green(), base_col.blue(), 26)

@@ -105,6 +105,14 @@ class HeaderImageMixin:
             )
             self.header_label.setPixmap(scaled)
             self.header_label.setStyleSheet("border-radius: 6px;")
+
+            # Extract vibrant thumbnail signature color and update ambient radial gradient
+            from utils.color_utils import extract_dominant_color
+            app_id = getattr(self, "app_id", None) or getattr(self, "_current_app_id", None)
+            dom_col = extract_dominant_color(pixmap, app_id=str(app_id) if app_id else None)
+            if dom_col and dom_col.isValid():
+                self._ambient_color = dom_col
+                self.update()
         except Exception as e:
             logger.debug(f"Error applying header pixmap: {e}")
             self._show_no_image()
