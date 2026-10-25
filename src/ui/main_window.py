@@ -305,6 +305,13 @@ class MainWindow(QMainWindow):
             run_boot_update_check()
             run_boot_config_check()
 
+            # Non-blocking autodeploy for lobster.lua if AT0-M is enabled and lobster is missing
+            try:
+                from utils.plugin_manager import autodeploy_lobster_if_needed
+                autodeploy_lobster_if_needed()
+            except Exception as e:
+                logger.debug(f"Lobster autodeploy check skipped/failed: {e}")
+
             # The ProtonDB prefetch is queued behind the update check instead
             # of running here: it issues one HTTP request per installed game,
             # and doing that while the manifest check is still hammering Steam

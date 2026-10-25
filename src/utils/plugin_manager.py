@@ -40,8 +40,9 @@ HTTP_USER_AGENT = "ASSella-PluginManager/1.0"
 
 # Known fallback plugin definitions in case network is offline and no cache exists
 FALLBACK_REQUIRED_PLUGINS = [
-    "download.lua",
+    "spacebunny1.5.lua",
     "spliced-tickets.lua",
+    "lobster.lua",
 ]
 
 
@@ -314,7 +315,7 @@ def get_active_interceptor_filename() -> Optional[str]:
                         p.is_file()
                         and not p.name.endswith(".bak")
                         and not p.name.startswith(".")
-                        and p.name != "spliced-tickets.lua"
+                        and p.name not in ("spliced-tickets.lua", "lobster.lua")
                     ):
                         return p.name
     except Exception as e:
@@ -331,7 +332,11 @@ def are_all_plugins_installed(ignore_bypass: bool = False) -> bool:
     if not ignore_bypass and is_plugin_check_bypassed():
         return True
 
-    active_interceptor = get_active_interceptor_filename() or get_settings().value("selected_download_plugin", "download.lua")
+    active_interceptor = (
+        get_active_interceptor_filename()
+        or get_settings().value("selected_download_plugin", "spacebunny1.5.lua")
+        or "spacebunny1.5.lua"
+    )
     if not is_plugin_installed_and_valid(active_interceptor):
         return False
 
@@ -362,7 +367,7 @@ def are_plugins_present(ignore_bypass: bool = False) -> bool:
             if not p.name.endswith(".bak") and not p.name.startswith("."):
                 if p.name == "spliced-tickets.lua":
                     has_spliced = True
-                else:
+                elif p.name != "lobster.lua":
                     has_interceptor = True
 
     return has_interceptor and has_spliced
@@ -484,7 +489,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
     if not target_dirs:
         return False, False, "No valid SLSsteam plugin directories found."
 
-    is_interceptor = (filename != "spliced-tickets.lua")
+    is_interceptor = (filename not in ("spliced-tickets.lua", "lobster.lua"))
     all_matched = True
     any_deployed = False
     errors = []
@@ -510,7 +515,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
                         existing.is_file()
                         and not existing.name.endswith(".bak")
                         and not existing.name.startswith(".")
-                        and existing.name != "spliced-tickets.lua"
+                        and existing.name not in ("spliced-tickets.lua", "lobster.lua")
                         and existing.name != filename
                     ):
                         try:
@@ -568,13 +573,13 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
 
 
 def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = False) -> Tuple[bool, List[str]]:
-    """Deploy the selected download interceptor and spliced-tickets plugins."""
+    """Deploy the selected download interceptor, spliced-tickets, and lobster (if AT0-M enabled and missing)."""
     ensure_sls_plugin_config_sections()
 
     active_interceptor = (
         get_active_interceptor_filename()
-        or get_settings().value("selected_download_plugin", "download.lua")
-        or "download.lua"
+        or get_settings().value("selected_download_plugin", "spacebunny1.5.lua")
+        or "spacebunny1.5.lua"
     )
 
     plugin_list = [active_interceptor, "spliced-tickets.lua"]
@@ -587,10 +592,56 @@ def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = Fal
         if not ok:
             overall_ok = False
 
+    # Lobster autodeployment: only if AT0-M enabled and lobster is not already present
+    try:
+        from utils.yaml_config_manager import is_at0m_enabled
+        if is_at0m_enabled():
+            status = get_plugin_status("lobster.lua")
+            if status == "missing":
+                ok, skipped, msg = deploy_plugin("lobster.lua", force_download=force_download, only_if_missing=True)
+                results.append(msg)
+                if not ok:
+                    overall_ok = False
+            else:
+                logger.debug("[PluginManager] lobster.lua already present, preserving local version.")
+        else:
+            logger.debug("[PluginManager] AT0-M disabled, skipping lobster deployment.")
+    except Exception as e:
+        logger.warning(f"[PluginManager] Error checking lobster autodeploy in deploy_all_plugins: {e}")
+
     return overall_ok, results
+
+
+def autodeploy_lobster_if_needed() -> bool:
+    """Auto-deploy lobster.lua only if AT0-M mode is enabled and lobster.lua is missing in SLS plugins dir.
+    If lobster.lua already exists, it is ignored/preserved.
+    If AT0-M is disabled, it is ignored.
+    """
+    try:
+        from utils.yaml_config_manager import is_at0m_enabled
+        if not is_at0m_enabled():
+            logger.debug("[PluginManager] AT0-M mode is disabled, skipping lobster autodeploy.")
+            return False
+
+        status = get_plugin_status("lobster.lua")
+        if status != "missing":
+            logger.debug("[PluginManager] lobster.lua already present in plugins dir, ignoring autodeploy.")
+            return False
+
+        logger.info("[PluginManager] AT0-M enabled and lobster.lua missing. Autodeploying lobster.lua...")
+        ok, skipped, msg = deploy_plugin("lobster.lua", only_if_missing=True)
+        if ok:
+            logger.info(f"[PluginManager] Successfully autodeployed lobster.lua: {msg}")
+        else:
+            logger.warning(f"[PluginManager] Failed autodeploying lobster.lua: {msg}")
+        return ok
+    except Exception as exc:
+        logger.warning(f"[PluginManager] Exception during autodeploy_lobster_if_needed: {exc}")
+        return False
 
 
 def sync_plugins_if_enabled() -> bool:
     """Startup auto-sync disabled to prevent destructive overwriting of custom plugins."""
     logger.debug("[PluginManager] Startup plugin auto-sync is disabled to preserve custom user plugins.")
     return True
+

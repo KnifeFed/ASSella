@@ -48,6 +48,18 @@ def benchmark_mrc_provider(provider: str) -> Tuple[bool, int, str]:
             ok = r.status_code == 200
             if not ok:
                 err = f"HTTP {r.status_code}"
+        elif prov == "steamrun":
+            url = "https://manifest.steam.run/api/manifest/2716668420228619833"
+            r = requests.get(url, headers={"User-Agent": "Valve/Steam HTTP Client 1.0"}, timeout=4.0)
+            ok = r.status_code in (200, 400, 404)
+            if not ok:
+                err = f"HTTP {r.status_code}"
+        elif prov == "opensteamtool":
+            url = "https://manifest.opensteamtool.com/manifest/2716668420228619833"
+            r = requests.get(url, headers={"User-Agent": "Valve/Steam HTTP Client 1.0"}, timeout=4.0)
+            ok = r.status_code in (200, 400, 404)
+            if not ok:
+                err = f"HTTP {r.status_code}"
         else:  # auto / race
             try:
                 r1 = requests.get(

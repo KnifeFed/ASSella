@@ -267,10 +267,12 @@ def create_downloads_tab(dialog) -> QWidget:
     mrc_row.addWidget(mrc_lbl)
 
     dialog.manifest_provider_combo = QComboBox()
-    dialog.manifest_provider_combo.setFixedWidth(160)
+    dialog.manifest_provider_combo.setFixedWidth(200)
     dialog.manifest_provider_combo.addItem("Auto (Race Wudrm & ManifestDeX)", "auto")
     dialog.manifest_provider_combo.addItem("Wudrm (Primary)", "wudrm")
     dialog.manifest_provider_combo.addItem("ManifestDeX", "manifestdex")
+    dialog.manifest_provider_combo.addItem("SteamRun (Testing)", "steamrun")
+    dialog.manifest_provider_combo.addItem("OpenSteamTool (Testing)", "opensteamtool")
     dialog.manifest_provider_combo.addItem("Hubcap Manifest (Direct API)", "hubcap")
 
     current_provider = dialog.settings.value("manifest_provider", "auto", type=str).lower()
