@@ -1799,12 +1799,14 @@ class LibraryActionsMixin:
                         appid=appid,
                         game_name=game_data.get("game_name", ""),
                         library_path=path,
+                        game_data=game_data,
                     )
                 elif _experimental_mode_enabled():
                     install_via_sls(
                         appid=appid,
                         game_name=game_data.get("game_name", ""),
                         library_path=path,
+                        game_data=game_data,
                     )
                 else:
                     patch_acf_via_sls(appid, library_path=path)

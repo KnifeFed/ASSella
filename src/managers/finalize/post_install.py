@@ -641,6 +641,8 @@ class PostInstallMixin:
                             game_name=self.game_data.get("game_name", ""),
                             library_path=self.current_dest_path or "",
                             main_window=self.main_window,
+                            game_data=self.game_data,
+                            size_on_disk=size_on_disk,
                         )
                     return
         except Exception as e:
