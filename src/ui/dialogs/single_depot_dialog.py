@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QTimer
 from PyQt6.QtGui import QPixmap, QIcon, QColor
 from PyQt6.QtWidgets import (
     QDialog,
@@ -99,6 +99,22 @@ class SingleDepotSelectionDialog(QDialog):
         except Exception:
             self._settings = None
             self.accent_color = "#C06C84"
+
+        # Check for cached thumbnail color to apply on first paint immediately
+        try:
+            from utils.color_utils import get_cached_thumbnail_color
+            cached_col = get_cached_thumbnail_color(str(self.app_id))
+            if cached_col and cached_col.isValid():
+                self._ambient_color = cached_col
+        except Exception:
+            pass
+
+        # Ambient breathing animation timer (~2.5 FPS, PS5 style)
+        self._ambient_phase = 0.0
+        self._ambient_timer = QTimer(self)
+        self._ambient_timer.setInterval(400)
+        self._ambient_timer.timeout.connect(self._on_ambient_tick)
+        self._ambient_timer.start()
 
         # Resolve the single depot ID and metadata
         if self.depots:
@@ -484,17 +500,23 @@ class SingleDepotSelectionDialog(QDialog):
         else:
             bottom_bar.addStretch(1)
 
-        ok_btn = QPushButton("OK")
-        ok_btn.setObjectName("ok_button")
-        ok_btn.setFixedHeight(28)
-        ok_btn.setMinimumWidth(80)
-        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok_btn.clicked.connect(self._on_ok_clicked)
+        active_accent_hex = self.accent_color
+        amb = getattr(self, "_ambient_color", None)
+        if amb and isinstance(amb, QColor) and amb.isValid():
+            active_accent_hex = amb.name()
+
         from utils.color_utils import get_best_foreground_color
-        btn_text_color = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
-        ok_btn.setStyleSheet(f"""
+        btn_text_color = get_best_foreground_color(active_accent_hex, dark_color="#111318", light_color="#FFFFFF")
+
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.setObjectName("ok_button")
+        self.ok_btn.setFixedHeight(28)
+        self.ok_btn.setMinimumWidth(80)
+        self.ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ok_btn.clicked.connect(self._on_ok_clicked)
+        self.ok_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.accent_color};
+                background-color: {active_accent_hex};
                 color: {btn_text_color};
                 border: none;
                 border-radius: 4px;
@@ -527,7 +549,7 @@ class SingleDepotSelectionDialog(QDialog):
             }}
         """)
 
-        bottom_bar.addWidget(ok_btn)
+        bottom_bar.addWidget(self.ok_btn)
         bottom_bar.addWidget(cancel_btn)
 
         main_layout.addLayout(bottom_bar)
@@ -768,8 +790,7 @@ class SingleDepotSelectionDialog(QDialog):
                     from utils.color_utils import extract_dominant_color
                     dom_col = extract_dominant_color(pixmap, app_id=str(self.app_id) if hasattr(self, "app_id") else None)
                     if dom_col and dom_col.isValid():
-                        self._ambient_color = dom_col
-                        self.update()
+                        self._apply_dynamic_theme(dom_col)
                 else:
                     self._show_no_image()
             else:
@@ -1115,6 +1136,51 @@ class SingleDepotSelectionDialog(QDialog):
                 selected_bid, patch_depots = dlg.get_selected_build()
                 self._apply_build_selection(selected_bid, patch_depots)
 
+    def _on_ambient_tick(self):
+        """Advance ambient phase and repaint background."""
+        if self.isMinimized():
+            return
+        self._ambient_phase = getattr(self, "_ambient_phase", 0.0) + 0.08
+        self.update()
+
+    def _apply_dynamic_theme(self, color: QColor) -> None:
+        """Dynamically adapt dialog accents (OK button, ambient glow) to thumbnail palette."""
+        if not color or not isinstance(color, QColor) or not color.isValid():
+            return
+        self._ambient_color = color
+        if hasattr(self, "ok_btn") and self.ok_btn is not None:
+            from utils.color_utils import get_best_foreground_color
+            col_hex = color.name()
+            btn_text_color = get_best_foreground_color(col_hex, dark_color="#111318", light_color="#FFFFFF")
+            self.ok_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {col_hex};
+                    color: {btn_text_color};
+                    border: none;
+                    border-radius: 4px;
+                    font-weight: bold;
+                    padding: 4px 14px;
+                }}
+                QPushButton:hover {{
+                    background-color: #FFFFFF;
+                    color: #111318;
+                }}
+            """)
+        self.update()
+
+    def closeEvent(self, a0):
+        if hasattr(self, "_ambient_timer") and self._ambient_timer is not None:
+            try:
+                self._ambient_timer.stop()
+            except Exception:
+                pass
+        if hasattr(self, "fetcher") and self.fetcher is not None:
+            try:
+                self.fetcher.stop()
+            except RuntimeError:
+                pass
+        super().closeEvent(a0)
+
     def changeEvent(self, a0):
         super().changeEvent(a0)
         if a0 and a0.type() == QEvent.Type.WindowStateChange:
@@ -1133,6 +1199,14 @@ class SingleDepotSelectionDialog(QDialog):
             center_x = w * 0.5
             center_y = 65.0
             radius = max(w * 0.65, 320.0)
+
+            # Atmospheric drift offset (~2.5 FPS PlayStation homescreen style)
+            phase = getattr(self, "_ambient_phase", 0.0)
+            if phase:
+                import math
+                center_x += math.sin(phase) * 24.0
+                center_y += math.cos(phase * 0.7) * 12.0
+                radius += math.sin(phase * 0.5) * 16.0
 
             grad = QRadialGradient(center_x, center_y, radius)
 

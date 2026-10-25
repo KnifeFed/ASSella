@@ -3,6 +3,7 @@ Build button), the depot table, the platform / DLC-only / Browse Files row
 and the bottom OK / Cancel bar."""
 
 import os
+from typing import Tuple
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPalette, QColor
@@ -34,6 +35,132 @@ from ui.dialogs.depot_selection.views import (
 
 class BuildUIMixin:
     """Static widget construction for the header, table, action row and bottom bar."""
+
+    def _load_settings(self) -> None:
+        """Read the depot-visibility filters and accent colour from settings.
+
+        A settings failure must not stop the dialog, so every filter falls
+        back to its default and accent_color to the built-in pink.
+        """
+        try:
+            from utils.settings import get_settings
+            settings = get_settings()
+            self._settings = settings
+            self._hide_macos = settings.value("hide_macos_depots", True, type=bool)
+            self._hide_android = settings.value("hide_android_depots", True, type=bool)
+            self._filter_soundtracks = settings.value("filter_soundtracks", True, type=bool)
+            self._hide_artbooks = settings.value("hide_artbooks_depots", True, type=bool)
+            self._hide_demos = settings.value("hide_demos_depots", True, type=bool)
+            self._hide_tools = settings.value("hide_tools_depots", True, type=bool)
+            self._show_hidden_depots = settings.value("show_hidden_depots_in_selector", False, type=bool)
+            self.accent_color = settings.value("accent_color", "#C06C84", type=str)
+        except Exception:
+            self._settings = None
+            self._hide_macos = True
+            self._hide_android = True
+            self._filter_soundtracks = True
+            self._hide_artbooks = True
+            self._hide_demos = True
+            self._hide_tools = True
+            self._show_hidden_depots = False
+            self.accent_color = "#C06C84"
+
+        try:
+            from utils.color_utils import get_cached_thumbnail_color
+            app_id = getattr(self, "app_id", None) or getattr(self, "_current_app_id", None)
+            cached_col = get_cached_thumbnail_color(str(app_id)) if app_id else None
+            if cached_col and cached_col.isValid():
+                self._ambient_color = cached_col
+        except Exception:
+            pass
+
+    def _resolve_accent_colors(self) -> Tuple[int, int, int]:
+        """Turn the accent colour into an RGB triple for the table stylesheet.
+
+        Returns the components rather than storing them so the caller keeps
+        them as locals, matching how the stylesheet f-strings consume them.
+        """
+        col = getattr(self, "_ambient_color", None)
+        if col and isinstance(col, QColor) and col.isValid():
+            return col.red(), col.green(), col.blue()
+
+        hex_c = (self.accent_color or "#C06C84").lstrip('#')
+        try:
+            accent_r = int(hex_c[0:2], 16)
+            accent_g = int(hex_c[2:4], 16)
+            accent_b = int(hex_c[4:6], 16)
+        except Exception:
+            accent_r, accent_g, accent_b = 192, 108, 132
+
+        return accent_r, accent_g, accent_b
+
+    def _get_table_stylesheet(self, accent_color: str, accent_r: int, accent_g: int, accent_b: int) -> str:
+        """Returns the stylesheet for the depot table matching the active/ambient accent."""
+        return f"""
+            QTableWidget {{
+                background-color: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 8px;
+                gridline-color: transparent;
+                outline: 0;
+                color: #FFFFFF;
+                selection-background-color: transparent;
+                selection-color: #FFFFFF;
+            }}
+            QTableWidget::item {{
+                padding: 6px 10px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            }}
+            QTableWidget::item:disabled {{
+                color: rgba(255, 255, 255, 0.35) !important;
+                background-color: transparent !important;
+            }}
+            QTableWidget::item:disabled:hover {{
+                background-color: transparent !important;
+            }}
+            QTableWidget::item:disabled:selected {{
+                background-color: transparent !important;
+                color: rgba(255, 255, 255, 0.35) !important;
+            }}
+            QTableWidget::item:hover {{
+                background-color: rgba({accent_r}, {accent_g}, {accent_b}, 0.06);
+            }}
+            QTableWidget::item:selected {{
+                background-color: rgba({accent_r}, {accent_g}, {accent_b}, 0.16) !important;
+                color: #FFFFFF !important;
+            }}
+            QHeaderView::section {{
+                background-color: #1b1e26;
+                color: rgba(255, 255, 255, 0.78);
+                padding: 6px 10px;
+                border: none;
+                font-size: 8.5pt;
+                font-weight: bold;
+                text-transform: uppercase;
+            }}
+            QHeaderView::section:first {{
+                padding-left: 34px;
+            }}
+            QTableWidget::indicator {{
+                width: 14px;
+                height: 14px;
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.35);
+                border-radius: 3px;
+            }}
+            QTableWidget::indicator:checked {{
+                background-color: {accent_color};
+                border: 1px solid {accent_color};
+            }}
+            QTableWidget::indicator:disabled {{
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+            }}
+            QTableWidget::indicator:checked:disabled {{
+                background-color: rgba(255, 255, 255, 0.20) !important;
+                border: 1px solid rgba(255, 255, 255, 0.20) !important;
+            }}
+        """
 
     def _build_header_section(self, layout: QVBoxLayout) -> None:
         """Build the thumbnail banner, game title, branch/build badges, install path, and filter pills bar."""
@@ -402,71 +529,13 @@ class BuildUIMixin:
         self.table_widget.setShowGrid(False)
         self.table_widget.setAlternatingRowColors(True)
 
-        self.table_widget.setStyleSheet(f"""
-            QTableWidget {{
-                background-color: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: 8px;
-                gridline-color: transparent;
-                outline: 0;
-                color: #FFFFFF;
-                selection-background-color: transparent;
-                selection-color: #FFFFFF;
-            }}
-            QTableWidget::item {{
-                padding: 6px 10px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-            }}
-            QTableWidget::item:disabled {{
-                color: rgba(255, 255, 255, 0.35) !important;
-                background-color: transparent !important;
-            }}
-            QTableWidget::item:disabled:hover {{
-                background-color: transparent !important;
-            }}
-            QTableWidget::item:disabled:selected {{
-                background-color: transparent !important;
-                color: rgba(255, 255, 255, 0.35) !important;
-            }}
-            QTableWidget::item:hover {{
-                background-color: rgba({accent_r}, {accent_g}, {accent_b}, 0.06);
-            }}
-            QTableWidget::item:selected {{
-                background-color: rgba({accent_r}, {accent_g}, {accent_b}, 0.16) !important;
-                color: #FFFFFF !important;
-            }}
-            QHeaderView::section {{
-                background-color: #1b1e26;
-                color: rgba(255, 255, 255, 0.78);
-                padding: 6px 10px;
-                border: none;
-                font-size: 8.5pt;
-                font-weight: bold;
-                text-transform: uppercase;
-            }}
-            QHeaderView::section:first {{
-                padding-left: 34px;
-            }}
-            QTableWidget::indicator {{
-                width: 14px;
-                height: 14px;
-                background: transparent;
-                border: 1px solid rgba(255, 255, 255, 0.35);
-                border-radius: 3px;
-            }}
-            QTableWidget::indicator:checked {{
-                background-color: {self.accent_color};
-                border: 1px solid {self.accent_color};
-            }}
-            QTableWidget::indicator:disabled {{
-                background-color: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-            }}
-            QTableWidget::indicator:checked:disabled {{
-                background-color: rgba(255, 255, 255, 0.20) !important;
-                border: 1px solid rgba(255, 255, 255, 0.20) !important;
-            }}
-        """)
+        active_accent_hex = self.accent_color
+        amb = getattr(self, "_ambient_color", None)
+        if amb and isinstance(amb, QColor) and amb.isValid():
+            active_accent_hex = amb.name()
+            accent_r, accent_g, accent_b = amb.red(), amb.green(), amb.blue()
+
+        self.table_widget.setStyleSheet(self._get_table_stylesheet(active_accent_hex, accent_r, accent_g, accent_b))
 
         palette = self.table_widget.palette()
         palette.setColor(
@@ -697,8 +766,13 @@ class BuildUIMixin:
         # Close button in bottom buttons removed per UX requirement (dialog relies on window titlebar close button)
         self.cancel_btn = None
 
+        active_accent_hex = self.accent_color
+        amb = getattr(self, "_ambient_color", None)
+        if amb and isinstance(amb, QColor) and amb.isValid():
+            active_accent_hex = amb.name()
+
         from utils.color_utils import get_best_foreground_color
-        text_hex = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
+        text_hex = get_best_foreground_color(active_accent_hex, dark_color="#111318", light_color="#FFFFFF")
 
         self.download_btn = QPushButton("Download")
         self.download_btn.setObjectName("ok_button")
@@ -707,7 +781,7 @@ class BuildUIMixin:
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.accent_color};
+                background-color: {active_accent_hex};
                 color: {text_hex};
                 border: none;
                 border-radius: 5px;
@@ -772,3 +846,45 @@ class BuildUIMixin:
                 "Injection Failed",
                 f"Failed writing DLC data to SLSsteam config.yaml:\n\n{exc}",
             )
+
+    def _apply_dynamic_theme(self, color: QColor) -> None:
+        """Dynamically adapt dialog accents (Download button, table selection, ambient glow)
+        to the thumbnail's signature palette. Never alters global user settings."""
+        if not color or not isinstance(color, QColor) or not color.isValid():
+            return
+        self._ambient_color = color
+
+        col_hex = color.name()
+        ar, ag, ab = color.red(), color.green(), color.blue()
+
+        # 1. Adapt Download button
+        if hasattr(self, "download_btn") and self.download_btn is not None:
+            from utils.color_utils import get_best_foreground_color
+            text_hex = get_best_foreground_color(col_hex, dark_color="#111318", light_color="#FFFFFF")
+            btn_h = 32 if getattr(self, "_dlc_only_mode", False) else 30
+            self.download_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {col_hex};
+                    color: {text_hex};
+                    border: none;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    font-size: 8.5pt;
+                    padding: 0 14px;
+                }}
+                QPushButton:hover {{
+                    background-color: #FFFFFF;
+                    color: #111318;
+                }}
+                QPushButton:disabled {{
+                    background-color: rgba(255, 255, 255, 0.04) !important;
+                    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                    color: rgba(255, 255, 255, 0.28) !important;
+                }}
+            """)
+
+        # 2. Adapt Table selection, hover, and checked indicator
+        if hasattr(self, "table_widget") and self.table_widget is not None:
+            self.table_widget.setStyleSheet(self._get_table_stylesheet(col_hex, ar, ag, ab))
+
+        self.update()

@@ -1,4 +1,6 @@
+import json
 import logging
+from pathlib import Path
 from typing import Dict, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QImage, QPixmap
@@ -6,6 +8,61 @@ from PyQt6.QtGui import QColor, QImage, QPixmap
 logger = logging.getLogger(__name__)
 
 _THUMBNAIL_COLOR_CACHE: Dict[str, QColor] = {}
+_DISK_CACHE_LOADED: bool = False
+
+
+def _get_color_cache_file() -> Path:
+    from utils.helpers import get_base_path
+    return get_base_path() / "thumbnail_colors.json"
+
+
+def _ensure_disk_cache_loaded() -> None:
+    global _DISK_CACHE_LOADED, _THUMBNAIL_COLOR_CACHE
+    if _DISK_CACHE_LOADED:
+        return
+    _DISK_CACHE_LOADED = True
+    try:
+        cache_path = _get_color_cache_file()
+        if cache_path.is_file():
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for aid, hex_str in data.items():
+                    if isinstance(hex_str, str) and hex_str.startswith("#"):
+                        col = QColor(hex_str)
+                        if col.isValid() and aid not in _THUMBNAIL_COLOR_CACHE:
+                            _THUMBNAIL_COLOR_CACHE[str(aid)] = col
+    except Exception as e:
+        logger.debug(f"Could not load thumbnail color cache from disk: {e}")
+
+
+def get_cached_thumbnail_color(app_id: Optional[str]) -> Optional[QColor]:
+    """Retrieve pre-extracted thumbnail color from memory/disk cache without needing a pixmap."""
+    if not app_id:
+        return None
+    _ensure_disk_cache_loaded()
+    return _THUMBNAIL_COLOR_CACHE.get(str(app_id))
+
+
+def _save_color_to_disk_cache(app_id: str, hex_val: str) -> None:
+    try:
+        cache_path = _get_color_cache_file()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if cache_path.is_file():
+            try:
+                raw = json.loads(cache_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    data = raw
+            except Exception:
+                data = {}
+        data[str(app_id)] = hex_val
+        # Cap size at 1500 entries
+        if len(data) > 1500:
+            for k in list(data.keys())[:300]:
+                data.pop(k, None)
+        cache_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"Could not save thumbnail color cache to disk: {e}")
 
 
 def extract_dominant_color(pixmap: QPixmap, app_id: Optional[str] = None) -> Optional[QColor]:
@@ -14,13 +71,15 @@ def extract_dominant_color(pixmap: QPixmap, app_id: Optional[str] = None) -> Opt
     Qt image downsampling and HSV vibrance clustering.
 
     Filters out dark borders/letterboxing and desaturated background tones.
-    Runs in < 0.5 ms and caches result in memory by app_id if provided.
+    Runs in < 0.5 ms and caches result in memory and disk by app_id if provided.
     """
     if not pixmap or pixmap.isNull():
         return None
 
-    if app_id and str(app_id) in _THUMBNAIL_COLOR_CACHE:
-        return _THUMBNAIL_COLOR_CACHE[str(app_id)]
+    if app_id:
+        _ensure_disk_cache_loaded()
+        if str(app_id) in _THUMBNAIL_COLOR_CACHE:
+            return _THUMBNAIL_COLOR_CACHE[str(app_id)]
 
     try:
         # Downsample to a small grid for near-instant analysis (24x24 = 576 pixels)
@@ -85,6 +144,7 @@ def extract_dominant_color(pixmap: QPixmap, app_id: Optional[str] = None) -> Opt
             adjusted = QColor.fromHsv(h, s, v)
             if app_id:
                 _THUMBNAIL_COLOR_CACHE[str(app_id)] = adjusted
+                _save_color_to_disk_cache(str(app_id), adjusted.name())
             return adjusted
 
     except Exception as e:

@@ -348,9 +348,31 @@ def main() -> int:
     )
     check(all(isinstance(v, dict) for v in dlg7.missing_depots_info.values()),
           "string metadata coerced to a dict")
-    dlg7.close()
+    # ----------------------------- dynamic theming and ambient animation
+    print("\n=== dynamic theming and ambient animation ===")
+    from PyQt6.QtGui import QColor
+    check(hasattr(dlg, "_ambient_timer") and dlg._ambient_timer.isActive(),
+          "ambient animation timer is running on dialog build")
+    check(dlg._ambient_timer.interval() == 400,
+          "ambient animation timer interval is 400ms (~2.5 FPS PS5-style)")
+
+    init_phase = dlg._ambient_phase
+    dlg._on_ambient_tick()
+    check(dlg._ambient_phase > init_phase,
+          "ambient tick advances phase for atmospheric drift")
+
+    test_color = QColor(60, 120, 240)  # #3c78f0
+    dlg._apply_dynamic_theme(test_color)
+    check(dlg._ambient_color == test_color,
+          "_apply_dynamic_theme sets _ambient_color")
+    check("#3c78f0" in dlg.download_btn.styleSheet().lower(),
+          "Download button adopts dynamic theme accent")
+    check("#3c78f0" in dlg.table_widget.styleSheet().lower(),
+          "Table widget adopts dynamic theme accent")
 
     dlg.close()
+    check(not dlg._ambient_timer.isActive(),
+          "ambient animation timer is stopped on closeEvent")
     app.processEvents()
 
     print()

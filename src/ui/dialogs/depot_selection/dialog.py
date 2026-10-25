@@ -245,6 +245,13 @@ class DepotSelectionDialog(
         self._spinner_timer = QTimer(self)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
+        # Ambient breathing animation timer (~2.5 FPS, PlayStation homescreen style)
+        self._ambient_phase = 0.0
+        self._ambient_timer = QTimer(self)
+        self._ambient_timer.setInterval(400)
+        self._ambient_timer.timeout.connect(self._on_ambient_tick)
+        self._ambient_timer.start()
+
         if isinstance(missing_hubcap_depots, dict):
             if not missing_depots_info:
                 # The keys are still worth keeping: we know which depots are
@@ -285,56 +292,12 @@ class DepotSelectionDialog(
         if editions or kwargs.get("editions"):
             self._multi_platform_editions = editions or kwargs.get("editions")
 
-    def _load_settings(self) -> None:
-        """Read the depot-visibility filters and accent colour from settings.
-
-        A settings failure must not stop the dialog, so every filter falls
-        back to its default and accent_color to the built-in pink.
-        """
-        # Check if we should hide macOS & Android depots
-        try:
-            from utils.settings import get_settings
-            settings = get_settings()
-            self._settings = settings
-            self._hide_macos = settings.value("hide_macos_depots", True, type=bool)
-            self._hide_android = settings.value("hide_android_depots", True, type=bool)
-            self._filter_soundtracks = settings.value("filter_soundtracks", True, type=bool)
-            self._hide_artbooks = settings.value("hide_artbooks_depots", True, type=bool)
-            self._hide_demos = settings.value("hide_demos_depots", True, type=bool)
-            self._hide_tools = settings.value("hide_tools_depots", True, type=bool)
-            self._show_hidden_depots = settings.value("show_hidden_depots_in_selector", False, type=bool)
-            self.accent_color = settings.value("accent_color", "#C06C84", type=str)
-        except Exception:
-            self._settings = None
-            self._hide_macos = True
-            self._hide_android = True
-            self._filter_soundtracks = True
-            self._hide_artbooks = True
-            self._hide_demos = True
-            self._hide_tools = True
-            self._show_hidden_depots = False
-            self.accent_color = "#C06C84"
-
-    def _resolve_accent_colors(self) -> Tuple[int, int, int]:
-        """Turn the accent colour into an RGB triple for the table stylesheet.
-
-        Returns the components rather than storing them so the caller keeps
-        them as locals, matching how the stylesheet f-strings consume them.
-        """
-        # Dynamically generate solid dark container color for selection background
-        from utils.color_utils import get_dark_container_color
-        sel_bg_hex = get_dark_container_color(self.accent_color)
-
-        # Parse hex to RGB
-        hex_c = self.accent_color.lstrip('#')
-        try:
-            accent_r = int(hex_c[0:2], 16)
-            accent_g = int(hex_c[2:4], 16)
-            accent_b = int(hex_c[4:6], 16)
-        except Exception:
-            accent_r, accent_g, accent_b = 192, 108, 132
-
-        return accent_r, accent_g, accent_b
+    def _on_ambient_tick(self):
+        """Advance ambient phase and repaint background."""
+        if self.isMinimized():
+            return
+        self._ambient_phase = getattr(self, "_ambient_phase", 0.0) + 0.08
+        self.update()
 
     def _load_selection_state(self) -> None:
         """Load DLC-only mode and whether a previous depot selection exists.
@@ -532,6 +495,11 @@ class DepotSelectionDialog(
                 self._spinner_timer.stop()
             except Exception:
                 pass
+        if hasattr(self, "_ambient_timer") and self._ambient_timer is not None:
+            try:
+                self._ambient_timer.stop()
+            except Exception:
+                pass
         if hasattr(self, "fetcher") and self.fetcher is not None:
             try:
                 self.fetcher.stop()
@@ -562,6 +530,14 @@ class DepotSelectionDialog(
             center_x = w * 0.5
             center_y = 65.0
             radius = max(w * 0.65, 320.0)
+
+            # Atmospheric drift offset (~2.5 FPS PlayStation homescreen style)
+            phase = getattr(self, "_ambient_phase", 0.0)
+            if phase:
+                import math
+                center_x += math.sin(phase) * 24.0
+                center_y += math.cos(phase * 0.7) * 12.0
+                radius += math.sin(phase * 0.5) * 16.0
 
             grad = QRadialGradient(center_x, center_y, radius)
 
