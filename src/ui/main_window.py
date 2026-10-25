@@ -2503,22 +2503,20 @@ class MainWindow(QMainWindow):
     @pyqtSlot(int, int)
     @pyqtSlot(int, int, str)
     def _set_update_all_btn_preparing_slot(self, done: int, total: int, current_name: str = "") -> None:
-        """Main-thread slot: update the Update All button text to show preparation progress."""
+        """Main-thread slot: keep the Update All button disabled and greyed out while queueing updates."""
         try:
             # The button lives on the dashboard widget, not on the ui_state.
             term = getattr(self, "simplified_terminal", None)
             btn = getattr(term, "update_all_btn", None) if term else None
             if btn:
+                btn.setEnabled(False)
                 if done < total:
                     if current_name:
-                        short_name = current_name if len(current_name) <= 16 else f"{current_name[:13]}..."
-                        btn.setText(f" Preparing {short_name} ({done + 1}/{total})...")
+                        btn.setToolTip(f"Preparing updates... ({done} of {total} ready - {current_name})")
                     else:
-                        btn.setText(f" Preparing... ({done}/{total})")
+                        btn.setToolTip(f"Preparing updates... ({done} of {total} ready)")
                 else:
-                    btn.setText(f" Queued ({done}/{total})")
-                btn.setEnabled(False)
-                btn.setToolTip(f"Preparing updates... ({done} of {total} ready)")
+                    btn.setToolTip("Queueing updates...")
         except Exception:
             pass
 
