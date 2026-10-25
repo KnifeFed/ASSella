@@ -10,12 +10,15 @@ import json
 import logging
 import os
 import shutil
+import ssl
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.helpers import get_base_path
+from utils.paths import Paths
 from utils.settings import get_settings
 from utils.yaml_config_manager import (
     ensure_plugins_enabled,
@@ -74,8 +77,71 @@ def get_cached_manifest_path() -> Path:
     return get_plugins_cache_dir() / MANIFEST_FILENAME
 
 
+def _http_get_bytes(
+    url: str,
+    timeout: float = DEFAULT_TIMEOUT,
+    headers: Optional[Dict[str, str]] = None,
+) -> bytes:
+    """Fetch raw bytes from HTTP(S) URL with multiple resilience fallbacks.
+
+    Tries in sequence:
+      1. Standard urllib.request (verified TLS)
+      2. urllib.request with unverified SSL context (fixes captive portal / ISP SSL hostname mismatch)
+      3. curl_cffi with Chrome 120 TLS impersonation (if installed)
+      4. Subprocess system curl with -k (insecure TLS fallback)
+    """
+    req_headers = {"User-Agent": HTTP_USER_AGENT}
+    if headers:
+        req_headers.update(headers)
+
+    # 1. Standard urllib.request
+    try:
+        req = urllib.request.Request(url, headers=req_headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return resp.read()
+    except Exception as e1:
+        logger.debug(f"[PluginManager] Standard urllib fetch failed for {url}: {e1}")
+
+    # 2. urllib with unverified SSL context (bypasses Hostname mismatch / SSL cert verify failed)
+    if url.startswith("https"):
+        try:
+            unverified_ctx = ssl._create_unverified_context()
+            req = urllib.request.Request(url, headers=req_headers)
+            with urllib.request.urlopen(req, context=unverified_ctx, timeout=timeout) as resp:
+                if resp.status == 200:
+                    logger.info(f"[PluginManager] Fetched {url} via unverified SSL context fallback")
+                    return resp.read()
+        except Exception as e2:
+            logger.debug(f"[PluginManager] Unverified SSL fetch failed for {url}: {e2}")
+
+    # 3. curl_cffi with Chrome 120 impersonation
+    try:
+        from curl_cffi import requests as cffi_requests
+        cffi_resp = cffi_requests.get(
+            url, headers=req_headers, impersonate="chrome120", timeout=timeout, verify=False
+        )
+        if cffi_resp.status_code == 200 and cffi_resp.content:
+            logger.info(f"[PluginManager] Fetched {url} via curl_cffi impersonation fallback")
+            return cffi_resp.content
+    except Exception as e3:
+        logger.debug(f"[PluginManager] curl_cffi fetch failed for {url}: {e3}")
+
+    # 4. System curl subprocess fallback
+    try:
+        cmd = ["curl", "-s", "-k", "--max-time", str(int(timeout)), "-A", HTTP_USER_AGENT, url]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout + 2)
+        if res.returncode == 0 and res.stdout:
+            logger.info(f"[PluginManager] Fetched {url} via system curl fallback")
+            return res.stdout
+    except Exception as e4:
+        logger.debug(f"[PluginManager] System curl fetch failed for {url}: {e4}")
+
+    raise RuntimeError(f"All network fetch attempts failed for {url}")
+
+
 def fetch_plugins_manifest(force_refresh: bool = False) -> Optional[Dict[str, Any]]:
-    """Fetch plugins_manifest.json from Cloud, falling back to local cache."""
+    """Fetch plugins_manifest.json from Cloud, falling back to local cache or bundled manifest."""
     cached_path = get_cached_manifest_path()
 
     if not force_refresh and cached_path.is_file():
@@ -87,20 +153,15 @@ def fetch_plugins_manifest(force_refresh: bool = False) -> Optional[Dict[str, An
 
     try:
         logger.debug(f"[PluginManager] Fetching manifest from {MANIFEST_URL}")
-        req = urllib.request.Request(
-            MANIFEST_URL,
-            headers={"User-Agent": HTTP_USER_AGENT, "Accept": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
-            if resp.status == 200:
-                raw = resp.read()
-                data = json.loads(raw.decode("utf-8"))
-                # Write to local cache atomically
-                tmp_cache = cached_path.with_suffix(".tmp")
-                tmp_cache.write_bytes(raw)
-                tmp_cache.replace(cached_path)
-                logger.debug(f"[PluginManager] Cached fresh manifest ({len(raw)} bytes)")
-                return data
+        raw = _http_get_bytes(MANIFEST_URL, timeout=DEFAULT_TIMEOUT, headers={"Accept": "application/json"})
+        if raw:
+            data = json.loads(raw.decode("utf-8"))
+            # Write to local cache atomically
+            tmp_cache = cached_path.with_suffix(".tmp")
+            tmp_cache.write_bytes(raw)
+            tmp_cache.replace(cached_path)
+            logger.debug(f"[PluginManager] Cached fresh manifest ({len(raw)} bytes)")
+            return data
     except Exception as e:
         logger.warning(f"[PluginManager] Failed fetching remote manifest: {e}")
 
@@ -112,6 +173,21 @@ def fetch_plugins_manifest(force_refresh: bool = False) -> Optional[Dict[str, An
                 return json.load(f)
         except Exception as read_err:
             logger.error(f"[PluginManager] Error reading cached manifest: {read_err}")
+
+    # Fall back to bundled manifest in res/plugins/
+    try:
+        bundled_manifest = Paths.resource("plugins/" + MANIFEST_FILENAME)
+        if bundled_manifest.is_file():
+            with open(bundled_manifest, "r", encoding="utf-8") as f:
+                logger.info("[PluginManager] Using bundled fallback plugins_manifest.json")
+                data = json.load(f)
+                try:
+                    shutil.copy2(bundled_manifest, cached_path)
+                except Exception:
+                    pass
+                return data
+    except Exception as b_err:
+        logger.debug(f"[PluginManager] Error reading bundled manifest: {b_err}")
 
     return None
 
@@ -130,6 +206,7 @@ def download_plugin(
     """Download a plugin file from Cloudflare R2 into the local persistent cache.
 
     Validates SHA-256 against expected_sha256 if provided.
+    Falls back to bundled plugin in res/plugins/ if network or SSL fails.
     Returns:
         (success: bool, cached_path: Optional[Path], message: str)
     """
@@ -144,14 +221,14 @@ def download_plugin(
             return True, cache_path, f"{filename} already cached."
 
     logger.info(f"[PluginManager] Downloading {filename} from {url}...")
+    content = None
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": HTTP_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
-            if resp.status != 200:
-                return False, None, f"HTTP {resp.status} fetching {filename} from R2."
-            content = resp.read()
+        content = _http_get_bytes(url, timeout=DEFAULT_TIMEOUT)
+    except Exception as dl_err:
+        logger.warning(f"[PluginManager] Network download failed for {filename}: {dl_err}")
 
-        # Validate integrity
+    # Validate integrity if downloaded
+    if content:
         if expected_sha256:
             dl_hash = hashlib.sha256(content).hexdigest()
             if dl_hash != expected_sha256:
@@ -160,28 +237,40 @@ def download_plugin(
                     f"Expected {expected_sha256[:8]}, got {dl_hash[:8]}"
                 )
                 logger.error(f"[PluginManager] {err_msg}")
-                return False, None, err_msg
+                content = None
+            else:
+                tmp_path = cache_path.with_suffix(".tmp")
+                tmp_path.write_bytes(content)
+                tmp_path.replace(cache_path)
+                logger.info(f"[PluginManager] Successfully downloaded and cached {filename} ({len(content)} bytes)")
+                return True, cache_path, f"Downloaded {filename} successfully."
+        else:
+            tmp_path = cache_path.with_suffix(".tmp")
+            tmp_path.write_bytes(content)
+            tmp_path.replace(cache_path)
+            logger.info(f"[PluginManager] Successfully downloaded and cached {filename} ({len(content)} bytes)")
+            return True, cache_path, f"Downloaded {filename} successfully."
 
-        # Atomic write to cache
-        tmp_path = cache_path.with_suffix(".tmp")
-        tmp_path.write_bytes(content)
-        tmp_path.replace(cache_path)
+    # Fallback to bundled plugin in res/plugins/
+    try:
+        bundled_file = Paths.resource(f"plugins/{filename}")
+        if bundled_file.is_file():
+            b_hash = calculate_sha256(bundled_file)
+            if not expected_sha256 or b_hash == expected_sha256:
+                shutil.copy2(bundled_file, cache_path)
+                logger.info(f"[PluginManager] Recovered {filename} from bundled fallback resources ({bundled_file})")
+                return True, cache_path, f"Using bundled fallback {filename}."
+            else:
+                logger.warning(
+                    f"[PluginManager] Bundled {filename} hash {b_hash[:8]} does not match expected {expected_sha256[:8]}"
+                )
+    except Exception as b_err:
+        logger.debug(f"[PluginManager] Error checking bundled fallback for {filename}: {b_err}")
 
-        logger.info(f"[PluginManager] Successfully downloaded and cached {filename} ({len(content)} bytes)")
-        return True, cache_path, f"Downloaded {filename} successfully."
+    if cache_path.is_file():
+        return True, cache_path, f"Using existing cached {filename}."
 
-    except urllib.error.HTTPError as he:
-        err = f"HTTP Error {he.code} downloading {filename} from R2"
-        logger.error(f"[PluginManager] {err}")
-        return False, None, err
-    except urllib.error.URLError as ue:
-        err = f"Network connection error downloading {filename}: {ue.reason}"
-        logger.error(f"[PluginManager] {err}")
-        return False, None, err
-    except Exception as exc:
-        err = f"Unexpected error downloading {filename}: {exc}"
-        logger.error(f"[PluginManager] {err}", exc_info=True)
-        return False, None, err
+    return False, None, f"Failed to download or recover {filename}."
 
 
 def is_plugin_installed_and_valid(filename: str, expected_sha256: Optional[str] = None) -> bool:
@@ -347,17 +436,31 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
             needs_download = True
 
     if needs_download:
-        # Check if file exists in local plugins cache or known local paths first
+        # Check if file exists in bundled resources, local plugins cache, or known local paths first
+        try:
+            bundled_alt = Paths.resource(f"plugins/{filename}")
+        except Exception:
+            bundled_alt = None
+
         alt_locations = [
-            get_base_path() / "plugins" / filename,
-            Path.home() / ".local" / "share" / "ACCELA" / "plugins" / filename,
-            Path.home() / ".config" / "SLSsteam" / "plugins" / filename,
+            loc for loc in [
+                bundled_alt,
+                get_base_path() / "plugins" / filename,
+                Path.home() / ".local" / "share" / "ACCELA" / "plugins" / filename,
+                Path.home() / ".config" / "SLSsteam" / "plugins" / filename,
+            ] if loc is not None
         ]
         found_local = None
         for alt in alt_locations:
             if alt.is_file():
-                found_local = alt
-                break
+                # Prefer an exact matching hash if expected_sha256 is known
+                if expected_sha256:
+                    if calculate_sha256(alt) == expected_sha256:
+                        found_local = alt
+                        break
+                elif found_local is None:
+                    found_local = alt
+
         if found_local and found_local != cache_path:
             try:
                 shutil.copy2(found_local, cache_path)
