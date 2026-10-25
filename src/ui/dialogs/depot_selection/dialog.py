@@ -245,13 +245,6 @@ class DepotSelectionDialog(
         self._spinner_timer = QTimer(self)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
-        # Ambient breathing animation timer (~2.5 FPS, PlayStation homescreen style)
-        self._ambient_phase = 0.0
-        self._ambient_timer = QTimer(self)
-        self._ambient_timer.setInterval(400)
-        self._ambient_timer.timeout.connect(self._on_ambient_tick)
-        self._ambient_timer.start()
-
         if isinstance(missing_hubcap_depots, dict):
             if not missing_depots_info:
                 # The keys are still worth keeping: we know which depots are
@@ -291,13 +284,6 @@ class DepotSelectionDialog(
         self.dlc_catalog = dlc_catalog or kwargs.get("dlc_catalog") or {}
         if editions or kwargs.get("editions"):
             self._multi_platform_editions = editions or kwargs.get("editions")
-
-    def _on_ambient_tick(self):
-        """Advance ambient phase and repaint background."""
-        if self.isMinimized():
-            return
-        self._ambient_phase = getattr(self, "_ambient_phase", 0.0) + 0.08
-        self.update()
 
     def _load_selection_state(self) -> None:
         """Load DLC-only mode and whether a previous depot selection exists.
@@ -495,11 +481,6 @@ class DepotSelectionDialog(
                 self._spinner_timer.stop()
             except Exception:
                 pass
-        if hasattr(self, "_ambient_timer") and self._ambient_timer is not None:
-            try:
-                self._ambient_timer.stop()
-            except Exception:
-                pass
         if hasattr(self, "fetcher") and self.fetcher is not None:
             try:
                 self.fetcher.stop()
@@ -530,14 +511,6 @@ class DepotSelectionDialog(
             center_x = w * 0.5
             center_y = 65.0
             radius = max(w * 0.65, 320.0)
-
-            # Atmospheric drift offset (~2.5 FPS PlayStation homescreen style)
-            phase = getattr(self, "_ambient_phase", 0.0)
-            if phase:
-                import math
-                center_x += math.sin(phase) * 24.0
-                center_y += math.cos(phase * 0.7) * 12.0
-                radius += math.sin(phase * 0.5) * 16.0
 
             grad = QRadialGradient(center_x, center_y, radius)
 

@@ -109,13 +109,6 @@ class SingleDepotSelectionDialog(QDialog):
         except Exception:
             pass
 
-        # Ambient breathing animation timer (~2.5 FPS, PS5 style)
-        self._ambient_phase = 0.0
-        self._ambient_timer = QTimer(self)
-        self._ambient_timer.setInterval(400)
-        self._ambient_timer.timeout.connect(self._on_ambient_tick)
-        self._ambient_timer.start()
-
         # Resolve the single depot ID and metadata
         if self.depots:
             from ui.dialogs.depot_selection.rules import get_effective_single_depot
@@ -500,13 +493,8 @@ class SingleDepotSelectionDialog(QDialog):
         else:
             bottom_bar.addStretch(1)
 
-        active_accent_hex = self.accent_color
-        amb = getattr(self, "_ambient_color", None)
-        if amb and isinstance(amb, QColor) and amb.isValid():
-            active_accent_hex = amb.name()
-
         from utils.color_utils import get_best_foreground_color
-        btn_text_color = get_best_foreground_color(active_accent_hex, dark_color="#111318", light_color="#FFFFFF")
+        btn_text_color = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
 
         self.ok_btn = QPushButton("OK")
         self.ok_btn.setObjectName("ok_button")
@@ -516,7 +504,7 @@ class SingleDepotSelectionDialog(QDialog):
         self.ok_btn.clicked.connect(self._on_ok_clicked)
         self.ok_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {active_accent_hex};
+                background-color: {self.accent_color};
                 color: {btn_text_color};
                 border: none;
                 border-radius: 4px;
@@ -1136,44 +1124,14 @@ class SingleDepotSelectionDialog(QDialog):
                 selected_bid, patch_depots = dlg.get_selected_build()
                 self._apply_build_selection(selected_bid, patch_depots)
 
-    def _on_ambient_tick(self):
-        """Advance ambient phase and repaint background."""
-        if self.isMinimized():
-            return
-        self._ambient_phase = getattr(self, "_ambient_phase", 0.0) + 0.08
-        self.update()
-
     def _apply_dynamic_theme(self, color: QColor) -> None:
-        """Dynamically adapt dialog accents (OK button, ambient glow) to thumbnail palette."""
+        """Dynamically adapt ambient color without touching button styling."""
         if not color or not isinstance(color, QColor) or not color.isValid():
             return
         self._ambient_color = color
-        if hasattr(self, "ok_btn") and self.ok_btn is not None:
-            from utils.color_utils import get_best_foreground_color
-            col_hex = color.name()
-            btn_text_color = get_best_foreground_color(col_hex, dark_color="#111318", light_color="#FFFFFF")
-            self.ok_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {col_hex};
-                    color: {btn_text_color};
-                    border: none;
-                    border-radius: 4px;
-                    font-weight: bold;
-                    padding: 4px 14px;
-                }}
-                QPushButton:hover {{
-                    background-color: #FFFFFF;
-                    color: #111318;
-                }}
-            """)
         self.update()
 
     def closeEvent(self, a0):
-        if hasattr(self, "_ambient_timer") and self._ambient_timer is not None:
-            try:
-                self._ambient_timer.stop()
-            except Exception:
-                pass
         if hasattr(self, "fetcher") and self.fetcher is not None:
             try:
                 self.fetcher.stop()
@@ -1199,14 +1157,6 @@ class SingleDepotSelectionDialog(QDialog):
             center_x = w * 0.5
             center_y = 65.0
             radius = max(w * 0.65, 320.0)
-
-            # Atmospheric drift offset (~2.5 FPS PlayStation homescreen style)
-            phase = getattr(self, "_ambient_phase", 0.0)
-            if phase:
-                import math
-                center_x += math.sin(phase) * 24.0
-                center_y += math.cos(phase * 0.7) * 12.0
-                radius += math.sin(phase * 0.5) * 16.0
 
             grad = QRadialGradient(center_x, center_y, radius)
 

@@ -80,10 +80,6 @@ class BuildUIMixin:
         Returns the components rather than storing them so the caller keeps
         them as locals, matching how the stylesheet f-strings consume them.
         """
-        col = getattr(self, "_ambient_color", None)
-        if col and isinstance(col, QColor) and col.isValid():
-            return col.red(), col.green(), col.blue()
-
         hex_c = (self.accent_color or "#C06C84").lstrip('#')
         try:
             accent_r = int(hex_c[0:2], 16)
@@ -529,13 +525,7 @@ class BuildUIMixin:
         self.table_widget.setShowGrid(False)
         self.table_widget.setAlternatingRowColors(True)
 
-        active_accent_hex = self.accent_color
-        amb = getattr(self, "_ambient_color", None)
-        if amb and isinstance(amb, QColor) and amb.isValid():
-            active_accent_hex = amb.name()
-            accent_r, accent_g, accent_b = amb.red(), amb.green(), amb.blue()
-
-        self.table_widget.setStyleSheet(self._get_table_stylesheet(active_accent_hex, accent_r, accent_g, accent_b))
+        self.table_widget.setStyleSheet(self._get_table_stylesheet(self.accent_color, accent_r, accent_g, accent_b))
 
         palette = self.table_widget.palette()
         palette.setColor(
@@ -766,13 +756,8 @@ class BuildUIMixin:
         # Close button in bottom buttons removed per UX requirement (dialog relies on window titlebar close button)
         self.cancel_btn = None
 
-        active_accent_hex = self.accent_color
-        amb = getattr(self, "_ambient_color", None)
-        if amb and isinstance(amb, QColor) and amb.isValid():
-            active_accent_hex = amb.name()
-
         from utils.color_utils import get_best_foreground_color
-        text_hex = get_best_foreground_color(active_accent_hex, dark_color="#111318", light_color="#FFFFFF")
+        text_hex = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
 
         self.download_btn = QPushButton("Download")
         self.download_btn.setObjectName("ok_button")
@@ -781,7 +766,7 @@ class BuildUIMixin:
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {active_accent_hex};
+                background-color: {self.accent_color};
                 color: {text_hex};
                 border: none;
                 border-radius: 5px;
@@ -848,43 +833,8 @@ class BuildUIMixin:
             )
 
     def _apply_dynamic_theme(self, color: QColor) -> None:
-        """Dynamically adapt dialog accents (Download button, table selection, ambient glow)
-        to the thumbnail's signature palette. Never alters global user settings."""
+        """Dynamically adapt ambient color without touching table or buttons."""
         if not color or not isinstance(color, QColor) or not color.isValid():
             return
         self._ambient_color = color
-
-        col_hex = color.name()
-        ar, ag, ab = color.red(), color.green(), color.blue()
-
-        # 1. Adapt Download button
-        if hasattr(self, "download_btn") and self.download_btn is not None:
-            from utils.color_utils import get_best_foreground_color
-            text_hex = get_best_foreground_color(col_hex, dark_color="#111318", light_color="#FFFFFF")
-            btn_h = 32 if getattr(self, "_dlc_only_mode", False) else 30
-            self.download_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {col_hex};
-                    color: {text_hex};
-                    border: none;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    font-size: 8.5pt;
-                    padding: 0 14px;
-                }}
-                QPushButton:hover {{
-                    background-color: #FFFFFF;
-                    color: #111318;
-                }}
-                QPushButton:disabled {{
-                    background-color: rgba(255, 255, 255, 0.04) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                    color: rgba(255, 255, 255, 0.28) !important;
-                }}
-            """)
-
-        # 2. Adapt Table selection, hover, and checked indicator
-        if hasattr(self, "table_widget") and self.table_widget is not None:
-            self.table_widget.setStyleSheet(self._get_table_stylesheet(col_hex, ar, ag, ab))
-
         self.update()
