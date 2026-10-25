@@ -414,6 +414,8 @@ class SelectionMixin:
 
     def _refresh_dlc_only_style(self) -> None:
         """Update the DLC Only button style to reflect its on/off state."""
+        if getattr(self, "_dlc_only_btn", None) is None:
+            return
         if not self._dlc_only_btn.isEnabled():
             self._dlc_only_btn.setStyleSheet("""
                 QPushButton {
@@ -459,6 +461,8 @@ class SelectionMixin:
 
     def _on_dlc_only_toggled(self) -> None:
         """Toggle DLC Only mode, show 3-second lockout warning, and auto-select DLC depots."""
+        if getattr(self, "_dlc_only_btn", None) is None:
+            return
         new_state = self._dlc_only_btn.isChecked()
         if new_state:
             try:

@@ -71,6 +71,8 @@ class BuildUIMixin:
             cached_col = get_cached_thumbnail_color(str(app_id)) if app_id else None
             if cached_col and cached_col.isValid():
                 self._ambient_color = cached_col
+                if hasattr(self, "title_bar") and self.title_bar:
+                    self.title_bar.update_accent_color(cached_col)
         except Exception:
             pass
 
@@ -371,92 +373,6 @@ class BuildUIMixin:
             storage_row.addWidget(path_text)
             storage_row.addStretch()
             title_layout.addLayout(storage_row)
-        else:
-            # Check if game is detected in Steam library (already installed)
-            aid_str = str(getattr(self, "app_id", "") or "").strip()
-            is_installed_in_steam = False
-            detected_lib = ""
-            try:
-                from core.steam_helpers import get_steam_libraries
-                from pathlib import Path
-                if aid_str and aid_str not in ("0", "None", "unknown"):
-                    for lib in get_steam_libraries():
-                        acf_p = Path(lib) / "steamapps" / f"appmanifest_{aid_str}.acf"
-                        if acf_p.is_file():
-                            is_installed_in_steam = True
-                            detected_lib = str(lib)
-                            break
-                        # Also check if installed in common directory with metadata.json
-                        common_dir = Path(lib) / "steamapps" / "common"
-                        if common_dir.is_dir():
-                            for item in common_dir.iterdir():
-                                if item.is_dir() and (item / ".DepotDownloader" / "metadata.json").is_file():
-                                    try:
-                                        import json
-                                        with open(item / ".DepotDownloader" / "metadata.json", "r", encoding="utf-8") as mf:
-                                            mdata = json.load(mf)
-                                            if str(mdata.get("appid")) == aid_str:
-                                                is_installed_in_steam = True
-                                                detected_lib = str(lib)
-                                                break
-                                    except Exception:
-                                        pass
-                                if is_installed_in_steam:
-                                    break
-                        if is_installed_in_steam:
-                            break
-            except Exception:
-                pass
-
-            # If preferred_library_path is explicitly provided and matches a steam library or has installation
-            if not is_installed_in_steam and self.preferred_library_path:
-                try:
-                    from core.steam_helpers import get_steam_libraries
-                    norm_pref = os.path.realpath(self.preferred_library_path)
-                    for lib in get_steam_libraries():
-                        if os.path.realpath(lib) == norm_pref:
-                            acf_test = Path(lib) / "steamapps" / f"appmanifest_{aid_str}.acf"
-                            if acf_test.is_file():
-                                is_installed_in_steam = True
-                                detected_lib = str(lib)
-                                break
-                except Exception:
-                    pass
-
-            if is_installed_in_steam:
-                is_owned = False
-                try:
-                    from core.steam_helpers import get_owned_steam_appids
-                    if aid_str and aid_str in get_owned_steam_appids():
-                        is_owned = True
-                except Exception:
-                    pass
-
-                if is_owned:
-                    status_text = "<span style='color: #4CAF50; font-weight: 600;'>Owned - Installed</span>"
-                    status_tip = f"Owned on Steam and detected in library: {detected_lib or 'Steam'}"
-                else:
-                    status_text = "<span style='color: #58a6ff; font-weight: 600;'>Installed</span>"
-                    status_tip = f"Installed and detected in library: {detected_lib or 'Steam'}"
-
-                self.path_lbl = QLabel(status_text)
-                self.path_lbl.setToolTip(status_tip)
-                self.path_lbl.setStyleSheet("font-size: 8.5pt;")
-                title_layout.addWidget(self.path_lbl)
-            else:
-                default_lib = ""
-                try:
-                    from core.steam_helpers import get_steam_libraries
-                    libs = get_steam_libraries()
-                    if libs:
-                        default_lib = libs[0]
-                except Exception:
-                    pass
-                display_path = self.preferred_library_path or default_lib or "Steam default directory"
-                self.path_lbl = QLabel(f"Install Path: <span style='color: rgba(255, 255, 255, 0.8); font-family: monospace;'>{display_path}</span>")
-                self.path_lbl.setToolTip(display_path)
-                self.path_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.5); font-size: 8pt;")
-                title_layout.addWidget(self.path_lbl)
 
         header_layout.addLayout(title_layout, 1)
         layout.addLayout(header_layout)
@@ -594,56 +510,7 @@ class BuildUIMixin:
             self.edition_button.clicked.connect(self._show_edition_menu)
             button_layout.addWidget(self.edition_button, 1)
 
-            dlc_mode = bool(getattr(self, "_dlc_only_mode", False))
-            if dlc_mode:
-                self._dlc_only_btn = None
-            else:
-                from utils.dlc_helpers import has_game_dlcs
-                has_dlc = has_game_dlcs(str(self.app_id), self.depots)
-
-                self._dlc_only_btn = QPushButton("DLC Only")
-                self._dlc_only_btn.setFixedHeight(28)
-                self._dlc_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-                self._dlc_only_btn.setCheckable(True)
-
-                if getattr(self, "lock_dlc_only", False):
-                    self._dlc_only_btn.setChecked(True)
-                    self._dlc_only_btn.setEnabled(False)
-                    self._dlc_only_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
-                    self._dlc_only_btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: rgba(255, 255, 255, 0.04) !important;
-                            color: rgba(255, 255, 255, 0.45) !important;
-                            border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                            border-radius: 6px;
-                            padding: 4px 12px;
-                            font-size: 8.5pt;
-                            font-weight: 500;
-                        }
-                    """)
-                    self._dlc_only_btn.setToolTip("DLC-Only mode is locked for this installation.")
-                    self._dlc_only_mode = True
-                elif not has_dlc:
-                    self._dlc_only_btn.setEnabled(False)
-                    self._dlc_only_btn.setChecked(False)
-                    self._dlc_only_btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: rgba(255, 255, 255, 0.03) !important;
-                            color: rgba(255, 255, 255, 0.25) !important;
-                            border: 1px solid rgba(255, 255, 255, 0.06) !important;
-                            border-radius: 6px;
-                            padding: 4px 12px;
-                            font-size: 8.5pt;
-                        }
-                    """)
-                    self._dlc_only_btn.setToolTip("DLC-Only mode is unavailable because this title has no DLC.")
-                    self._dlc_only_mode = False
-                else:
-                    self._dlc_only_btn.setChecked(self._dlc_only_mode)
-                    self._refresh_dlc_only_style()
-                    self._dlc_only_btn.toggled.connect(self._on_dlc_only_toggled)
-
-                button_layout.addWidget(self._dlc_only_btn, 1)
+            self._dlc_only_btn = None
 
             browse_files_button = QPushButton("Browse Files...")
             browse_files_button.setFixedHeight(28)
@@ -833,8 +700,10 @@ class BuildUIMixin:
             )
 
     def _apply_dynamic_theme(self, color: QColor) -> None:
-        """Dynamically adapt ambient color without touching table or buttons."""
+        """Dynamically adapt ambient color and titlebar without touching table or buttons."""
         if not color or not isinstance(color, QColor) or not color.isValid():
             return
         self._ambient_color = color
+        if hasattr(self, "title_bar") and self.title_bar:
+            self.title_bar.update_accent_color(color)
         self.update()

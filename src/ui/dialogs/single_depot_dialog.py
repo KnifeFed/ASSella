@@ -184,6 +184,8 @@ class SingleDepotSelectionDialog(QDialog):
             can_maximize=False,
             use_power_close=True,
         )
+        if getattr(self, "_ambient_color", None):
+            self.title_bar.update_accent_color(self._ambient_color)
         root_layout.addWidget(self.title_bar)
 
         content_widget = QWidget()
@@ -1125,10 +1127,12 @@ class SingleDepotSelectionDialog(QDialog):
                 self._apply_build_selection(selected_bid, patch_depots)
 
     def _apply_dynamic_theme(self, color: QColor) -> None:
-        """Dynamically adapt ambient color without touching button styling."""
+        """Dynamically adapt ambient color and titlebar without touching button styling."""
         if not color or not isinstance(color, QColor) or not color.isValid():
             return
         self._ambient_color = color
+        if hasattr(self, "title_bar") and self.title_bar:
+            self.title_bar.update_accent_color(color)
         self.update()
 
     def closeEvent(self, a0):
