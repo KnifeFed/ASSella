@@ -527,6 +527,10 @@ def get_plugin_status(filename: str) -> str:
     return "outdated"
 
 
+# Alias for backward compatibility
+get_plugin_state = get_plugin_status
+
+
 def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: bool = False) -> Tuple[bool, bool, str]:
     """Ensure a plugin is downloaded from R2 and deployed into SLSsteam plugin directories.
 

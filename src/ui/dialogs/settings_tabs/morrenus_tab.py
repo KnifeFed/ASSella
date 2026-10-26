@@ -153,7 +153,7 @@ def create_api_key_setting(
         }
     """)
 
-    from utils.plugin_manager import get_plugin_state
+    from utils.plugin_manager import get_plugin_status
     from utils.sls_lua_config import (
         generate_hubcap_timestamp,
         get_spacebunny_conf_path,
@@ -164,7 +164,7 @@ def create_api_key_setting(
     atom_sync_cb.setChecked(is_sync_on)
 
     sb_exists = get_spacebunny_conf_path().is_file()
-    hub_active = (get_plugin_state("hubcap.lua") != "missing")
+    hub_active = (get_plugin_status("hubcap.lua") != "missing")
     if not hub_active or not sb_exists:
         atom_sync_cb.setEnabled(False)
         atom_sync_cb.setToolTip(

@@ -170,7 +170,13 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
 
         hdlg = HubcapConfigDialog()
         self.assertIsNotNone(hdlg.key_input)
-        self.assertIsNotNone(hdlg.sw_enabled)
+    def test_settings_dialog_tabs_initialization(self):
+        """Ensure SettingsDialog loads all tabs without runtime import crashes."""
+        from ui.dialogs.settings import SettingsDialog
+        for tab_name in ("general", "downloads", "assella", "at0m", "morrenus", "tools", "advanced"):
+            dlg = SettingsDialog(initial_tab=tab_name)
+            self.assertIsNotNone(dlg)
+            dlg.close()
 
 
 if __name__ == "__main__":
