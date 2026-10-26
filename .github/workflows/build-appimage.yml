@@ -278,7 +278,7 @@ jobs:
           # even when the user has no system zsync. Its absence is a warning, not a
           # fatal error: the full-download path still works.
           if [ -f "AppDir/bin/zsync" ]; then
-            AppDir/bin/zsync --version >/dev/null 2>&1 || \
+            AppDir/bin/zsync -V >/dev/null 2>&1 || \
               echo "::warning::Bundled zsync present but fails to execute"
             echo "zsync bundled and verified executable."
           else
