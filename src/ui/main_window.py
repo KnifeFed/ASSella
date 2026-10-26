@@ -1397,7 +1397,7 @@ class MainWindow(QMainWindow):
         self.progress_controls_layout.setContentsMargins(2, 1, 2, 1)
         self.progress_controls_layout.setSpacing(6)
 
-        self.speed_label = ElidedLabel("")
+        self.speed_label = ElidedLabel("", enable_tooltip=False)
         self.speed_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.speed_label.setVisible(False)
         self.progress_controls_layout.addWidget(self.speed_label, 1)

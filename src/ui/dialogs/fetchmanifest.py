@@ -455,11 +455,12 @@ class FetchManifestDialog(QDialog):
 
         status_sub_layout.addStretch(1)
 
-        self.username_label = QLabel("--")
+        self.username_label = QLabel("--:")
+        self.username_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.username_label.setStyleSheet("color: #8ab4f8; font-size: 11px;")
         status_sub_layout.addWidget(self.username_label)
 
-        status_sub_layout.addSpacing(12)
+        status_sub_layout.addSpacing(4)
 
         self.usage_label = QLabel("--/--")
         self.usage_label.setStyleSheet("color: #8ab4f8; font-size: 11px;")
@@ -644,11 +645,11 @@ class FetchManifestDialog(QDialog):
         # Update User Stats
         stats = result.get("stats", {})
         if stats.get("error"):
-            self.username_label.setText("Error")
+            self.username_label.setText("Error:")
             self.usage_label.setText("--")
         else:
             uname = stats.get('username', 'Unknown')
-            self.username_label.setText(str(uname))
+            self.username_label.setText(f"{uname}:")
             usage = stats.get("daily_usage", 0)
             limit = stats.get("daily_limit", 0)
             self.usage_label.setText(f"{usage}/{limit}")
@@ -1181,7 +1182,7 @@ class FetchManifestDialog(QDialog):
         self.settings.setValue(f"selected_branch/{app_id}", selected_branch)
         self._toggle_inputs(False)
         self._set_loading_active(True)
-        self.status_label.setText(f"Checking updates & fetching manifest for App ID {app_id} (Branch: {selected_branch})...")
+        self.status_label.setText("Fetching from Hubcap...")
 
         worker = self.task_runner.run(self.check_and_download_manifest, app_id, selected_branch)
         worker.finished.connect(self.on_download_finished)
@@ -1455,7 +1456,7 @@ class FetchManifestDialog(QDialog):
         aid_str = str(app_id).strip()
         self._toggle_inputs(False)
         self._set_loading_active(True)
-        self.status_label.setText(f"Checking branches for App ID {aid_str}...")
+        self.status_label.setText("Checking branches...")
         worker = self.task_runner.run(self._fetch_branches_and_prompt, aid_str)
         worker.finished.connect(self._on_branches_fetched)
         worker.error.connect(self.on_task_error)
@@ -1477,7 +1478,7 @@ class FetchManifestDialog(QDialog):
         branch = getattr(self, "_current_selected_branch", "public")
         metadata = {"branch": branch, "download_backend": "assella"}
         
-        self.status_label.setText("Processing manifest data...")
+        self.status_label.setText("Processing manifests...")
         self._toggle_inputs(False)
 
         def _parse_task():
@@ -1522,7 +1523,7 @@ class FetchManifestDialog(QDialog):
                 except Exception as _del_err:
                     logger.debug(f"Could not remove corrupt zip {filepath}: {_del_err}")
 
-                self.status_label.setText(f"Cached manifest was invalid. Re-downloading fresh bundle for App {app_id}...")
+                self.status_label.setText("Re-downloading manifests...")
                 self._toggle_inputs(False)
                 self._set_loading_active(True)
                 worker = self.task_runner.run(self.check_and_download_manifest, app_id, branch)

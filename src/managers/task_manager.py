@@ -1603,12 +1603,16 @@ class TaskManager(
         if not self.download_task or not self.current_job:
             return
 
+        display_name = ""
+        if self.game_data and isinstance(self.game_data, dict):
+            display_name = str(self.game_data.get("game_name") or self.game_data.get("name") or "").strip()
+        if not display_name and self.current_job:
+            display_name = os.path.basename(self.current_job)
+
         reply = ThemedMessageBox.question(
             self.main_window,
             "Cancel Job",
-            f"Are you sure you want to cancel the download for '{
-                os.path.basename(self.current_job)
-            }'?",
+            f"Are you sure you want to cancel the download for '{display_name}'?",
             ThemedMessageBox.StandardButton.Yes | ThemedMessageBox.StandardButton.No,
             ThemedMessageBox.StandardButton.No,
         )
