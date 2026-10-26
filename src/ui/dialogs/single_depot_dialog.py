@@ -931,6 +931,10 @@ class SingleDepotSelectionDialog(QDialog):
             return [str(self.single_depot_id)]
         return []
 
+    def get_selected_dlc_data(self) -> Dict[str, str]:
+        """Single depot base games have no separate DLC selections."""
+        return {}
+
     def get_selected_files(self) -> List[str]:
         return self.selected_files
 

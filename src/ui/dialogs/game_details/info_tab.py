@@ -758,6 +758,19 @@ def on_branch_combo_changed(dialog) -> None:
         dialog.settings.setValue(f"installed_buildid/{dialog.appid}/{sel_branch}", installed_bid)
         dialog.settings.setValue(f"installed_buildid/{dialog.appid}", installed_bid)
 
+    # Format human-readable date if branch timebuildupdated/timeupdated is present
+    branch_date_str = ""
+    if isinstance(b_info, dict):
+        raw_ts = b_info.get("timebuildupdated") or b_info.get("timeupdated")
+        if raw_ts:
+            try:
+                ts_int = int(raw_ts)
+                if ts_int > 1000000000:
+                    from datetime import datetime
+                    branch_date_str = datetime.fromtimestamp(ts_int).strftime("%b %d, %Y")
+            except (ValueError, TypeError, OverflowError):
+                branch_date_str = ""
+
     if hasattr(dialog, "build_val_lbl"):
         if installed_bid:
             is_older = False
@@ -767,18 +780,33 @@ def on_branch_combo_changed(dialog) -> None:
                 except (ValueError, TypeError):
                     is_older = (branch_bid != installed_bid)
 
-            dialog.build_val_lbl.setText(installed_bid)
             if is_older:
+                dialog.build_val_lbl.setText(installed_bid)
                 dialog.build_val_lbl.setStyleSheet("color: #FFB84D; font-size: 9.5pt; font-weight: bold; background: transparent;")
-                dialog.build_val_lbl.setToolTip(f"Installed Build: {installed_bid}\nLatest on Steam ({sel_branch}): Build {branch_bid} (Update available)")
+                tt = f"Installed Build: {installed_bid}\nLatest on Steam ({sel_branch}): Build {branch_bid}"
+                if branch_date_str:
+                    tt += f" ({branch_date_str})"
+                tt += " • Update available"
+                dialog.build_val_lbl.setToolTip(tt)
             else:
+                display_text = f"{installed_bid} ({branch_date_str})" if branch_date_str else installed_bid
+                dialog.build_val_lbl.setText(display_text)
                 dialog.build_val_lbl.setStyleSheet("color: #46b464; font-size: 9.5pt; font-weight: bold; background: transparent;")
-                dialog.build_val_lbl.setToolTip(f"Installed Build: {installed_bid} (Up to date)")
+                tt = f"Installed Build: {installed_bid}"
+                if branch_date_str:
+                    tt += f" ({branch_date_str})"
+                tt += " • Up to date"
+                dialog.build_val_lbl.setToolTip(tt)
         else:
             if branch_bid:
-                dialog.build_val_lbl.setText(branch_bid)
+                display_text = f"{branch_bid} ({branch_date_str})" if branch_date_str else branch_bid
+                dialog.build_val_lbl.setText(display_text)
                 dialog.build_val_lbl.setStyleSheet("color: #7ab3ff; font-size: 9.5pt; font-weight: bold; background: transparent;")
-                dialog.build_val_lbl.setToolTip(f"Latest on Steam ({sel_branch}): Build {branch_bid}\n(Game not installed or build ID unknown)")
+                tt = f"Latest on Steam ({sel_branch}): Build {branch_bid}"
+                if branch_date_str:
+                    tt += f" ({branch_date_str})"
+                tt += "\n(Game not installed or build ID unknown)"
+                dialog.build_val_lbl.setToolTip(tt)
             else:
                 dialog.build_val_lbl.setText("Unknown")
                 dialog.build_val_lbl.setStyleSheet(f"color: {dialog.accent_color}; font-size: 9.5pt; font-weight: bold; background: transparent;")
@@ -2154,10 +2182,20 @@ def reconstruct_manifests_from_depotcache(dialog) -> None:
 
 
 def get_installed_buildid(dialog) -> str:
-    bid = str(dialog.game_data.get("buildid") or "").strip()
-    if bid and bid.isdigit() and bid != "0":
-        return bid
+    # 1. Prefer verified installed_buildid from QSettings for the installed branch
+    if dialog.settings and dialog.appid:
+        installed_branch = dialog.settings.value(f"installed_branch/{dialog.appid}", "", type=str)
+        if installed_branch:
+            saved = dialog.settings.value(f"installed_buildid/{dialog.appid}/{installed_branch}", "", type=str)
+            if saved and str(saved).isdigit() and str(saved) != "0":
+                dialog.game_data["buildid"] = str(saved)
+                return str(saved)
+        saved = dialog.settings.value(f"installed_buildid/{dialog.appid}", "", type=str)
+        if saved and str(saved).isdigit() and str(saved) != "0":
+            dialog.game_data["buildid"] = str(saved)
+            return str(saved)
 
+    # 2. Check ACF on disk (Steam manifest registered build)
     acf_path = dialog.game_data.get("appmanifest_path")
     if not acf_path and dialog.appid and dialog.appid not in ("0", "N/A", "unknown"):
         from core.steam_helpers import get_steam_libraries
@@ -2183,18 +2221,12 @@ def get_installed_buildid(dialog) -> str:
         except Exception as e:
             logger.debug(f"[GameDetails] Could not read the build id from the app manifest: {e}")
 
-    if dialog.settings and dialog.appid:
-        installed_branch = dialog.settings.value(f"installed_branch/{dialog.appid}", "", type=str)
-        if installed_branch:
-            saved = dialog.settings.value(f"installed_buildid/{dialog.appid}/{installed_branch}", "", type=str)
-            if saved and str(saved).isdigit() and str(saved) != "0":
-                dialog.game_data["buildid"] = str(saved)
-                return str(saved)
-        saved = dialog.settings.value(f"installed_buildid/{dialog.appid}", "", type=str)
-        if saved and str(saved).isdigit() and str(saved) != "0":
-            dialog.game_data["buildid"] = str(saved)
-            return str(saved)
+    # 3. Fall back to game_data["buildid"]
+    bid = str(dialog.game_data.get("buildid") or "").strip()
+    if bid and bid.isdigit() and bid != "0":
+        return bid
 
+    # 4. Fall back to metadata directory
     if dialog.appid and dialog.appid not in ("0", "N/A", "unknown"):
         try:
             import json

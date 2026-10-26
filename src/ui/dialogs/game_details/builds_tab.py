@@ -93,25 +93,30 @@ def init_builds_tab(dialog) -> None:
     dialog.builds_scroll.setWidget(dialog.builds_scroll_inner)
     dialog.builds_center_stack.addWidget(dialog.builds_scroll)
 
-    # Page 2: Manual fallback when builds are unavailable
+    # Page 2: Setup choices & manual fallback when builds are unavailable
     dialog.builds_error_container = QWidget()
     manual_layout = QVBoxLayout(dialog.builds_error_container)
     manual_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    manual_layout.setSpacing(10)
+    manual_layout.setSpacing(12)
 
-    manual_title = QLabel("SteamDB Build History Unavailable")
-    manual_title.setStyleSheet("font-size: 10.5pt; font-weight: bold; color: rgba(255, 255, 255, 0.85);")
+    manual_title = QLabel("Automated Patch History & Manifests")
+    manual_title.setStyleSheet("font-size: 11pt; font-weight: bold; color: rgba(255, 255, 255, 0.9);")
     manual_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
     manual_layout.addWidget(manual_title)
 
-    manual_sub = QLabel("Automated patch history requires the Byparr solver.\nYou can still roll back to a specific version or download a manifest manually:")
-    manual_sub.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.5);")
+    manual_sub = QLabel(
+        "SteamDB automated build history and manifest discovery requires a Cloudflare Turnstile solver (Byparr).\n"
+        "Choose how you want to configure your bypasser, or download a manifest manually:"
+    )
+    manual_sub.setStyleSheet("font-size: 8.5pt; color: rgba(255, 255, 255, 0.6); line-height: 1.4;")
     manual_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
     manual_layout.addWidget(manual_sub)
 
-    manual_center_btn = QPushButton("Manual Rollback / Manifest")
-    manual_center_btn.setFixedSize(210, 36)
-    manual_center_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    # 3 Setup Choices Row
+    setup_btn_row = QHBoxLayout()
+    setup_btn_row.setSpacing(10)
+    setup_btn_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
     from utils.color_utils import get_best_foreground_color
     dl_fg = get_best_foreground_color(dialog.accent_color)
     download_style = f"""
@@ -122,6 +127,7 @@ def init_builds_tab(dialog) -> None:
             border-radius: 6px;
             font-weight: 600;
             font-size: 9pt;
+            padding: 8px 16px;
         }}
         QPushButton:hover:!disabled {{
             background-color: #FFFFFF;
@@ -133,9 +139,59 @@ def init_builds_tab(dialog) -> None:
             border: 1px solid rgba(255, 255, 255, 0.08);
         }}
     """
-    manual_center_btn.setStyleSheet(download_style)
+    secondary_style = """
+        QPushButton {
+            background-color: rgba(255, 255, 255, 0.08);
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 9pt;
+            padding: 8px 16px;
+        }
+        QPushButton:hover:!disabled {
+            background-color: rgba(255, 255, 255, 0.16);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+    """
+
+    btn_install_byparr = QPushButton("Install ASSella Byparr")
+    btn_install_byparr.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn_install_byparr.setStyleSheet(download_style)
+
+    def _on_install_byparr_clicked():
+        try:
+            from managers.cli_manager import open_cli_terminal
+            open_cli_terminal(
+                "curl -sSL https://raw.githubusercontent.com/niwia/ASSella/beta/scripts/setup_byparr.sh | bash; "
+                "echo ''; echo 'Setup finished. Press Enter to close...'; read _"
+            )
+        except Exception as _ex:
+            logger.warning(f"Could not open terminal for byparr setup: {_ex}")
+
+    btn_install_byparr.clicked.connect(_on_install_byparr_clicked)
+    setup_btn_row.addWidget(btn_install_byparr)
+
+    btn_custom_byparr = QPushButton("Connect Existing Bypasser")
+    btn_custom_byparr.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn_custom_byparr.setStyleSheet(secondary_style)
+
+    def _on_custom_byparr_clicked():
+        from ui.dialogs.custom_byparr_dialog import CustomByparrDialog
+        dlg = CustomByparrDialog(dialog, accent_color=dialog.accent_color)
+        if dlg.exec():
+            fetch_steamdb_builds_async(dialog)
+
+    btn_custom_byparr.clicked.connect(_on_custom_byparr_clicked)
+    setup_btn_row.addWidget(btn_custom_byparr)
+
+    manual_center_btn = QPushButton("Manual Rollback / Manifest")
+    manual_center_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    manual_center_btn.setStyleSheet(secondary_style)
     manual_center_btn.clicked.connect(lambda: dialog._on_manual_rollback_clicked())
-    manual_layout.addWidget(manual_center_btn, 0, Qt.AlignmentFlag.AlignCenter)
+    setup_btn_row.addWidget(manual_center_btn)
+
+    manual_layout.addLayout(setup_btn_row)
     dialog.builds_center_stack.addWidget(dialog.builds_error_container)
 
     page_layout.addWidget(dialog.builds_center_stack, 1)
@@ -193,7 +249,7 @@ def init_builds_tab(dialog) -> None:
 
     try:
         from core.steamdb_scraper import ByparrManager
-        has_byparr = ByparrManager.find_byparr_dir() is not None
+        has_byparr = ByparrManager.is_available()
     except Exception:
         has_byparr = False
     dialog.builds_bottom_bar.setVisible(has_byparr)
@@ -455,8 +511,8 @@ def fetch_steamdb_builds_async(dialog) -> None:
 
     try:
         from core.steamdb_scraper import ByparrManager
-        if not ByparrManager.find_byparr_dir():
-            on_builds_error(dialog, "Solver not installed")
+        if not ByparrManager.is_available():
+            on_builds_error(dialog, "Solver not configured")
             return
     except Exception:
         on_builds_error(dialog, "Solver unavailable")
@@ -486,7 +542,7 @@ def on_builds_loaded(dialog, builds: list) -> None:
     if sip.isdeleted(dialog):
         return
     from core.steamdb_scraper import ByparrManager
-    has_byparr = ByparrManager.find_byparr_dir() is not None
+    has_byparr = ByparrManager.is_available()
     dialog.builds_refresh_btn.setText("⟳  Refresh")
     dialog.builds_refresh_btn.setEnabled(True)
     dialog.builds_refresh_btn.setToolTip("")
@@ -511,7 +567,7 @@ def on_builds_error(dialog, err_msg: str) -> None:
     if sip.isdeleted(dialog):
         return
     from core.steamdb_scraper import ByparrManager
-    has_byparr = ByparrManager.find_byparr_dir() is not None
+    has_byparr = ByparrManager.is_available()
     dialog.builds_refresh_btn.setText("⟳  Refresh")
     dialog.builds_refresh_btn.setEnabled(True)
     if dialog.builds_cards_layout.count() > 1:

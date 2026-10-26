@@ -241,7 +241,7 @@ class GameDetailsDialogV2(QDialog):
 
         from ui.dialog_titlebar import DialogTitleBar
         title_text = f"{self.game_data.get('game_name', 'Game')} — Details"
-        self.title_bar = DialogTitleBar(self, title=title_text, can_minimize=False, can_maximize=False, use_power_close=True)
+        self.title_bar = DialogTitleBar(self, title=title_text, can_minimize=False, can_maximize=True, use_power_close=True)
         root.addWidget(self.title_bar)
 
         # Hero Banner — v2 or legacy

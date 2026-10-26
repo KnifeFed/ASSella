@@ -615,10 +615,10 @@ class BuildUIMixin:
                 color: rgba(255, 255, 255, 0.28) !important;
             }
         """)
-        self.move_to_atom_btn.setToolTip("Register selected depots and DLC entitlements to SLSsteam AT0-M (Steam Native) mode")
+        is_atom = bool(getattr(self, "_is_atom_mode", False))
         if hasattr(self, "_handle_move_to_atom_clicked"):
             self.move_to_atom_btn.clicked.connect(self._handle_move_to_atom_clicked)
-        self.move_to_atom_btn.setVisible(dlc_mode or bool(getattr(self, "_is_atom_mode", False)))
+        self.move_to_atom_btn.setVisible(dlc_mode and not is_atom)
 
         # Close button in bottom buttons removed per UX requirement (dialog relies on window titlebar close button)
         self.cancel_btn = None
@@ -626,7 +626,8 @@ class BuildUIMixin:
         from utils.color_utils import get_best_foreground_color
         text_hex = get_best_foreground_color(self.accent_color, dark_color="#111318", light_color="#FFFFFF")
 
-        self.download_btn = QPushButton("Download")
+        btn_text = "Register to AT0-M" if is_atom else "Download"
+        self.download_btn = QPushButton(btn_text)
         self.download_btn.setObjectName("ok_button")
         self.download_btn.setFixedHeight(btn_h)
         self.download_btn.setMinimumWidth(125)

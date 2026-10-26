@@ -43,8 +43,9 @@ gifs/
 scratch/
 
 # ── Plugin distribution & R2 publishing ──────────────────────────────────────
-plugins_manifest.json
-plugins/
+/plugins_manifest.json
+/plugins/
+!src/res/plugins/
 r2-publish/
 .wrangler/
 cloud/
