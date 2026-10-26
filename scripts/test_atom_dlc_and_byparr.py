@@ -407,6 +407,12 @@ Lobster = {
         self.assertEqual(parsed_rss[0]["day"], "Mon")
         self.assertEqual(parsed_rss[0]["time"], "15:30")
 
+        # Test get_patchnotes tiered source tagging
+        with patch.object(scraper, "fetch_rendered_html", return_value=mock_dynamic_html):
+            results = scraper.get_patchnotes(999888, limit=10)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["_source"], "render_section")
+
         # Test verify_steamdb_status callable
         ok, provider = verify_steamdb_status(timeout_seconds=3)
         self.assertIsInstance(ok, bool)

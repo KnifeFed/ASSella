@@ -319,6 +319,10 @@ class ByparrManager:
                 start_new_session=True,
                 preexec_fn=_preexec if sys.platform != "win32" else None,
             )
+            try:
+                byparr_logfile.close()
+            except Exception:
+                pass
             cls._managed = True
 
             # Wait up to 10 seconds for service readiness
@@ -508,7 +512,7 @@ class SteamDBScraper:
     def __init__(self, solver_url: Optional[str] = None):
         self.solver_url = solver_url or ByparrManager.get_service_url()
 
-    def fetch_via_fast_race(self, url: str, timeout_seconds: float = 4.0) -> str:
+    def fetch_via_fast_race(self, url: str, timeout_seconds: float = 4.0, extra_headers: Optional[Dict[str, str]] = None) -> str:
         """
         Races multiple browser TLS / HTTP/2 impersonation profiles in parallel using curl_cffi.
         Returns the HTML from the first profile that succeeds with HTTP 200 and no Cloudflare challenge.
@@ -518,10 +522,13 @@ class SteamDBScraper:
 
         def _try_profile(profile: Dict[str, Any]) -> Tuple[bool, str, str]:
             try:
+                headers = profile["headers"].copy()
+                if extra_headers:
+                    headers.update(extra_headers)
                 r = cffi_requests.get(
                     url,
                     impersonate=profile["impersonate"],
-                    headers=profile["headers"],
+                    headers=headers,
                     timeout=timeout_seconds,
                 )
                 cf_mitigated = r.headers.get("Cf-Mitigated", "").lower()
@@ -589,7 +596,7 @@ class SteamDBScraper:
 
         return ""
 
-    def fetch_rendered_html(self, url: str, timeout_seconds: int = 60, allow_fast_path: bool = True) -> str:
+    def fetch_rendered_html(self, url: str, timeout_seconds: int = 60, allow_fast_path: bool = True, extra_headers: Optional[Dict[str, str]] = None) -> str:
         """
         Fetches SteamDB HTML. First races multiple direct TLS profiles (fast-path).
         If fast-path is challenged or unavailable and Byparr is configured, falls back to Byparr.
@@ -603,7 +610,7 @@ class SteamDBScraper:
             has_byparr = ByparrManager.is_available()
             fast_timeout = 4.0 if has_byparr else 8.0
             t0 = time.time()
-            html = self.fetch_via_fast_race(url, timeout_seconds=fast_timeout)
+            html = self.fetch_via_fast_race(url, timeout_seconds=fast_timeout, extra_headers=extra_headers)
             if html:
                 return html
             elapsed = time.time() - t0
@@ -764,34 +771,59 @@ class SteamDBScraper:
 
         return results
 
-    def get_patchnotes(self, appid: int, limit: int = 40) -> List[Dict[str, Any]]:
+    def get_patchnotes(self, appid: int, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Scrapes patchnotes for an app.
-        First tries SteamDB's official RSS feed (https://steamdb.info/api/PatchnotesRSS/?appid=<appid>)
-        which provides fast, clean, unthrottled build history without client-side JS rendering.
-        Falls back to https://steamdb.info/app/<appid>/patchnotes/ (HTML),
-        and falls back to Byparr if fast-path yields no builds and Byparr is available.
+        1. Fast-Path AJAX section (RenderAppSection): queries SteamDB's pre-rendered section endpoint
+           (https://steamdb.info/api/RenderAppSection/?section=patchnotes&appid=<appid>) via Direct TLS
+           with X-Requested-With: XMLHttpRequest. Returns up to 50 builds with patch titles in ~200ms.
+        2. Fast-Path XML RSS feed (PatchnotesRSS): fallback providing the 10 most recent release builds.
+        3. Fast-Path static HTML page: fallback parsing the branches table.
+        4. Byparr fallback: headless browser rendering if Byparr is configured and fast-path yielded no builds.
         """
-        # 1. Try official RSS feed first
+        # 1. Try RenderAppSection endpoint first (provides up to 50 rich builds with patch titles)
+        render_url = f"{STEAMDB_BASE_URL}/api/RenderAppSection/?section=patchnotes&appid={appid}"
+        ajax_headers = {
+            "Accept": "text/html",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/",
+        }
+        ajax_html = self.fetch_rendered_html(render_url, extra_headers=ajax_headers)
+        if ajax_html:
+            results = self._parse_patchnotes_html(ajax_html, limit=limit)
+            if results:
+                for r in results:
+                    r["_source"] = "render_section"
+                logger.info(f"[SteamDB] Parsed {len(results)} patchnotes entries from RenderAppSection for App {appid}")
+                return results
+
+        # 2. Try official XML RSS feed fallback (provides the 10 most recent release builds)
         rss_url = f"{STEAMDB_BASE_URL}/api/PatchnotesRSS/?appid={appid}"
         xml_data = self.fetch_rendered_html(rss_url)
         results = self._parse_patchnotes_rss(xml_data, limit=limit)
         if results:
+            for r in results:
+                r["_source"] = "rss"
             logger.info(f"[SteamDB] Parsed {len(results)} patchnotes entries from RSS for App {appid}")
             return results
 
-        # 2. Fall back to static / JS HTML page
+        # 3. Fall back to static HTML page (branches table)
         url = f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/"
         html = self.fetch_rendered_html(url)
         if html:
             results = self._parse_patchnotes_html(html, limit=limit)
+            if results:
+                for r in results:
+                    r["_source"] = "static_html"
 
-        # 3. Dual parser fallback: if fast-path static HTML didn't yield builds, but Byparr is available, try Byparr once
+        # 4. Fall back to Byparr (if fast-path yielded no builds and Byparr is available)
         if not results and ByparrManager.is_available():
-            logger.info(f"[SteamDB] Fast-path HTML did not yield patchnotes for App {appid}. Falling back to Byparr...")
+            logger.info(f"[SteamDB] Fast-path did not yield patchnotes for App {appid}. Falling back to Byparr...")
             byparr_html = self.fetch_via_byparr(url, timeout_seconds=60)
             if byparr_html:
                 results = self._parse_patchnotes_html(byparr_html, limit=limit)
+                for r in results:
+                    r["_source"] = "byparr"
 
         logger.info(f"[SteamDB] Parsed {len(results)} patchnotes entries for App {appid}")
         return results
@@ -1046,28 +1078,29 @@ class SteamDBBuildsCache:
         return cls._instance
 
     def __init__(self):
-        if self._initialized:
-            return
+        with self._lock:
+            if self._initialized:
+                return
 
-        from utils.helpers import get_data_file_path
-        # Migrate legacy root file if present
-        legacy_path = get_base_path() / "steamdb_builds.db"
-        target_path = get_base_path() / "db" / "steamdb_builds.db"
-        if legacy_path.exists() and not target_path.exists():
-            try:
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                import shutil
-                shutil.move(str(legacy_path), str(target_path))
-                logger.info(f"[SteamDB Cache] Migrated legacy steamdb_builds.db from root to {target_path}")
-            except Exception as e:
-                logger.warning(f"[SteamDB Cache] Failed to migrate legacy steamdb_builds.db: {e}")
+            from utils.helpers import get_data_file_path
+            # Migrate legacy root file if present
+            legacy_path = get_base_path() / "steamdb_builds.db"
+            target_path = get_base_path() / "db" / "steamdb_builds.db"
+            if legacy_path.exists() and not target_path.exists():
+                try:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    import shutil
+                    shutil.move(str(legacy_path), str(target_path))
+                    logger.info(f"[SteamDB Cache] Migrated legacy steamdb_builds.db from root to {target_path}")
+                except Exception as e:
+                    logger.warning(f"[SteamDB Cache] Failed to migrate legacy steamdb_builds.db: {e}")
 
-        self.db_path = get_data_file_path("steamdb_builds.db")
-        self._conn_lock = threading.RLock()
-        self.cctx = zstd.ZstdCompressor(level=3) if zstd else None
-        self.dctx = zstd.ZstdDecompressor() if zstd else None
-        self._init_db()
-        self._initialized = True
+            self.db_path = get_data_file_path("steamdb_builds.db")
+            self._conn_lock = threading.RLock()
+            self.cctx = zstd.ZstdCompressor(level=3) if zstd else None
+            self.dctx = zstd.ZstdDecompressor() if zstd else None
+            self._init_db()
+            self._initialized = True
 
     def _init_db(self):
         try:
@@ -1086,7 +1119,7 @@ class SteamDBBuildsCache:
             logger.error(f"[SteamDB Cache] Failed to init database at {self.db_path}: {e}")
 
     def get_builds(self, appid: int) -> List[Dict[str, Any]]:
-        """Retrieves cached builds (up to 6) for appid, decompressed from zstd."""
+        """Retrieves cached builds (up to 50) for appid, decompressed from zstd."""
         return self.get_builds_with_age(appid)[0]
 
     def get_builds_with_age(self, appid: int) -> tuple:
@@ -1114,12 +1147,12 @@ class SteamDBBuildsCache:
         return [], -1
 
     def save_builds(self, appid: int, builds: List[Dict[str, Any]]):
-        """Saves up to the 6 most recent builds into steamdb_builds.db with zstandard compression."""
+        """Saves up to 50 most recent builds into steamdb_builds.db with zstandard compression."""
         if not builds:
             return
-        top_6 = builds[:6]
+        top_builds = builds[:50]
         try:
-            json_bytes = json.dumps(top_6).encode("utf-8")
+            json_bytes = json.dumps(top_builds).encode("utf-8")
             compressed_blob = self.cctx.compress(json_bytes) if self.cctx else json_bytes
 
             with self._conn_lock, sqlite3.connect(str(self.db_path)) as conn:
@@ -1132,7 +1165,7 @@ class SteamDBBuildsCache:
                         last_updated = excluded.last_updated
                 """, (int(appid), compressed_blob, int(time.time())))
                 conn.commit()
-                logger.info(f"[SteamDB Cache] Successfully cached {len(top_6)} builds for App {appid} in {self.db_path.name}")
+                logger.info(f"[SteamDB Cache] Successfully cached {len(top_builds)} builds for App {appid} in {self.db_path.name}")
         except Exception as e:
             logger.error(f"[SteamDB Cache] Failed to save builds for {appid}: {e}")
 
