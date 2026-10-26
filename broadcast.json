@@ -1,6 +1,6 @@
 {
-  "active": true,
-  "message": "Plugins are having issues, use asssella mode",
-  "duration": 10,
-  "level": "Warn"
+  "active": false,
+  "message": "Steam is back online!",
+  "duration": 5,
+  "level": "info"
 }
