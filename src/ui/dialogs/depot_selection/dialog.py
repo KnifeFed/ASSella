@@ -123,6 +123,7 @@ class DepotSelectionDialog(
         lock_storage=False,
         dlc_only_mode=False,
         lock_dlc_only=False,
+        is_atom_mode=False,
         **kwargs,
     ):
         super().__init__(parent)
@@ -136,6 +137,7 @@ class DepotSelectionDialog(
             lock_dlc_only=lock_dlc_only or kwargs.get("lock_dlc_only", False),
             dlc_catalog=kwargs.get("dlc_catalog") or {},
             editions=kwargs.get("editions"),
+            is_atom_mode=is_atom_mode or kwargs.get("is_atom_mode", False),
         )
         self.resize(700, 540)
         self.setMinimumSize(620, 480)
@@ -154,9 +156,10 @@ class DepotSelectionDialog(
         root_layout.setSpacing(0)
 
         from ui.dialog_titlebar import DialogTitleBar
+        bar_title = "Select DLC Depots (AT0-M)" if (self._is_atom_mode and self._dlc_only_mode) else ("Configure AT0-M Depots" if self._is_atom_mode else "Select Depots to Download")
         self.title_bar = DialogTitleBar(
             self,
-            title="Select Depots to Download",
+            title=bar_title,
             can_minimize=True,
             can_maximize=True,
             use_power_close=True,
@@ -220,6 +223,7 @@ class DepotSelectionDialog(
         self.preferred_library_path = library_path
         self.lock_storage = lock_storage
         self.lock_dlc_only = lock_dlc_only
+        self._is_atom_mode = bool(kwargs.get("is_atom_mode", False))
         self._settings = get_settings()
         self._dlc_only_mode = bool(
             dlc_only_mode
@@ -292,9 +296,9 @@ class DepotSelectionDialog(
         decide what to preselect.
         """
         # Load DLC-only mode state
-        self._dlc_only_mode = (
-            self._settings.value(f"dlc_only_mode/{self.app_id}", False, type=bool)
-            if self._settings else False
+        self._dlc_only_mode = bool(
+            self._dlc_only_mode
+            or (self._settings.value(f"dlc_only_mode/{self.app_id}", False, type=bool) if self._settings else False)
         )
 
         # Check if saved depot selections exist from previous sessions
@@ -381,6 +385,11 @@ class DepotSelectionDialog(
         return self._dlc_only_mode
 
     def accept(self):
+        if getattr(self, "_is_atom_mode", False):
+            if hasattr(self, "_handle_move_to_atom_clicked"):
+                self._handle_move_to_atom_clicked()
+                return
+
         selected_depots = self.get_selected_depots()
         checked_dlcs = self.get_selected_dlc_data()
 

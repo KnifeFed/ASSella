@@ -503,8 +503,115 @@ class LibraryActionsMixin:
             )
             return
 
+        self._dismiss_steam_loading_overlay()
+
+        from utils.settings import get_settings
+        from utils.plugin_manager import are_plugins_present
+        settings = get_settings()
+
+        dlc_action = settings.value("at0m_default_dlc_action", "ask", type=str)
+        if dlc_action not in ("native", "assella"):
+            from ui.dialogs.download_backend_dialog import (
+                DownloadBackendDialog,
+                BACKEND_CANCEL,
+                BACKEND_ASSELLA,
+                BACKEND_NATIVE_STEAM,
+            )
+            parent_widget = self if isinstance(self, QWidget) else getattr(self, "main_window", None)
+            accent_color = getattr(self, "accent_color", "#6c5ce7")
+            dlg = DownloadBackendDialog(
+                parent=parent_widget,
+                app_id=appid,
+                game_name=name,
+                accent_color=accent_color,
+                mode="dlc",
+            )
+            dlg.exec()
+            choice = dlg.get_choice()
+            if choice == BACKEND_CANCEL:
+                return
+            mode_choice = "native" if choice == BACKEND_NATIVE_STEAM else "assella"
+        else:
+            mode_choice = dlc_action
+
+        if mode_choice == "native":
+            if not discovery.has_sized_depots:
+                catalog_dlcs = {
+                    str(k): str(v)
+                    for k, v in (discovery.catalog or {}).items()
+                    if str(k).strip() and str(k).strip() != str(appid).strip()
+                }
+                dlc_count = len(catalog_dlcs)
+                if not dlc_count:
+                    ThemedMessageBox.information(
+                        self,
+                        "No DLCs Detected",
+                        f"No downloadable or depot-less DLCs were found for {name}.",
+                    )
+                    return
+
+                if dlc_count <= 63:
+                    answer = ThemedMessageBox.question(
+                        self,
+                        "Depot-less DLCs Detected",
+                        f"<b>{name}</b> has <b>{dlc_count}</b> DLC(s), but none of them require downloading content files.\n\n"
+                        "SLSsteam will automatically unlock most depot-less games.\n\n"
+                        f"Would you like ASSella to register these {dlc_count} DLC(s) into SLSsteam AdditionalApps?",
+                        ThemedMessageBox.StandardButton.Yes | ThemedMessageBox.StandardButton.No,
+                        ThemedMessageBox.StandardButton.Yes,
+                    )
+                    if answer != ThemedMessageBox.StandardButton.Yes:
+                        return
+                    self._register_depotless_dlcs_to_atom(appid, name, catalog_dlcs, mode="additional_apps")
+                    return
+                else:
+                    from ui.dialogs.dlc_selection_checklist_dialog import (
+                        HighDlcPromptDialog,
+                        DlcSelectionChecklistDialog,
+                    )
+                    parent_widget = self if isinstance(self, QWidget) else getattr(self, "main_window", None)
+                    accent_color = getattr(self, "accent_color", "#6c5ce7")
+                    prompt_dlg = HighDlcPromptDialog(
+                        parent=parent_widget,
+                        app_id=appid,
+                        game_name=name,
+                        dlc_count=dlc_count,
+                        accent_color=accent_color,
+                    )
+                    prompt_dlg.exec()
+                    high_choice = prompt_dlg.get_choice()
+                    if high_choice == "dlc_data":
+                        self._register_depotless_dlcs_to_atom(appid, name, catalog_dlcs, mode="dlc_data")
+                    elif high_choice == "manual":
+                        chk_dlg = DlcSelectionChecklistDialog(
+                            parent=parent_widget,
+                            app_id=appid,
+                            game_name=name,
+                            catalog=catalog_dlcs,
+                            accent_color=accent_color,
+                        )
+                        if chk_dlg.exec():
+                            selected_dlcs = chk_dlg.get_selected_dlcs()
+                            if not selected_dlcs:
+                                ThemedMessageBox.information(self, "Nothing Selected", f"No DLCs were selected for {name}.")
+                                return
+                            sub_mode = "dlc_data" if len(selected_dlcs) >= 64 else "additional_apps"
+                            self._register_depotless_dlcs_to_atom(appid, name, selected_dlcs, mode=sub_mode)
+                    return
+            else:
+                # Sized DLC depots exist -> launch AT0-M depot selection flow
+                self._show_steam_loading_overlay(f"Fetching manifest for {name}...")
+                game_data_dlc = dict(game_data)
+                game_data_dlc["_dlc_only"] = True
+                game_data_dlc["_lock_dlc_only"] = True
+                game_data_dlc["_lock_storage"] = True
+                game_data_dlc["_is_atom_dlc"] = True
+                game_data_dlc["_dlc_catalog"] = dict(discovery.catalog)
+                self._fetch_game_manifest(game_data_dlc, is_verify=False)
+                return
+
+        # ASSella mode flow (the old way)
         if not discovery.has_sized_depots:
-            self._dismiss_steam_loading_overlay()
             answer = ThemedMessageBox.warning(
                 self,
                 "No Downloadable DLC Depots",
@@ -517,20 +624,57 @@ class LibraryActionsMixin:
             )
             if answer != ThemedMessageBox.StandardButton.Yes:
                 return
-            self._show_steam_loading_overlay(f"Fetching manifest for {name}...")
 
-        overlay = getattr(self, "_steam_tab_loading_overlay", None)
-        if overlay:
-            overlay.set_label(f"Fetching manifest for {name}...")
-        else:
-            self._show_steam_loading_overlay(f"Fetching manifest for {name}...")
-
+        self._show_steam_loading_overlay(f"Fetching manifest for {name}...")
         game_data_dlc = dict(game_data)
         game_data_dlc["_dlc_only"] = True
         game_data_dlc["_lock_dlc_only"] = True
         game_data_dlc["_lock_storage"] = True
         game_data_dlc["_dlc_catalog"] = dict(discovery.catalog)
         self._fetch_game_manifest(game_data_dlc, is_verify=False)
+
+    def _register_depotless_dlcs_to_atom(
+        self, appid: str, name: str, dlc_dict: Dict[str, str], mode: str = "additional_apps"
+    ) -> bool:
+        """Register depot-less DLCs to SLSsteam config (either AdditionalApps or DlcData) for an owned Steam game."""
+        from PyQt6.QtWidgets import QWidget
+        from utils.yaml_config_manager import get_user_config_path, remove_additional_app
+        from utils.settings import get_settings
+        from ui.dialogs.themed_message_box import ThemedMessageBox
+
+        parent_widget = self if isinstance(self, QWidget) else getattr(self, "main_window", None)
+        config_path = get_user_config_path()
+        if not config_path or not config_path.exists():
+            ThemedMessageBox.critical(parent_widget, "Config Error", "SLSsteam config.yaml could not be found.")
+            return False
+
+        try:
+            if mode == "dlc_data":
+                from utils.yaml.dlc import add_dlc_data_batch
+                add_dlc_data_batch(config_path, appid, dlc_dict)
+            else:
+                from utils.yaml.apps import add_additional_apps_batch
+                apps_list = [(did, dname) for did, dname in dlc_dict.items()]
+                add_additional_apps_batch(config_path, apps_list)
+
+            # Strict DLC-only invariant: base game AppID must NEVER be in AdditionalApps
+            remove_additional_app(config_path, appid)
+            get_settings().setValue(f"dlc_only_mode/{appid}", True)
+
+            target_section = "DlcData" if mode == "dlc_data" else "AdditionalApps"
+            ThemedMessageBox.information(
+                parent_widget,
+                "DLCs Registered",
+                f"✓ Successfully registered {len(dlc_dict)} DLC(s) for '{name}' into SLSsteam {target_section}!\n\n"
+                "Please restart Steam now so Steam client can unlock and recognize your DLCs.",
+            )
+            return True
+        except Exception as exc:
+            logger.error(f"[Library] Failed to register depot-less DLCs to AT0-M: {exc}", exc_info=True)
+            ThemedMessageBox.critical(
+                parent_widget, "Registration Error", f"Failed to register DLCs into SLSsteam config:\n\n{exc}"
+            )
+            return False
 
     def _save_config_only_dlc_mode(self, appid: str, game_data: dict, depot_dialog) -> bool:
         """Record DLC mode for a game whose DLCs have no downloadable depot.
@@ -2987,6 +3131,7 @@ class LibraryActionsMixin:
                     lock_dlc_only=lock_dlc_only,
                     dlc_catalog=game_data.get("_dlc_catalog") or {},
                     editions=parsed_data.get("editions") or game_data.get("editions"),
+                    is_atom_mode=bool(game_data.get("_is_atom_dlc")),
                 )
 
                 # Apply recommended build selection if set
@@ -3095,6 +3240,24 @@ class LibraryActionsMixin:
                 return
 
         self._dismiss_steam_loading_overlay()
+
+        # If AT0-M DLC mode was chosen or registered, do NOT submit to ASSella download queue
+        is_atom_dlc = bool(game_data.get("_is_atom_dlc"))
+        if is_atom_dlc or ('depot_dialog' in locals() and getattr(depot_dialog, "_atom_registered", False)):
+            logger.info("AT0-M DLC registration completed for AppID %s; skipping downloader job queue.", appid)
+            if hasattr(self, "_active_fetches"):
+                self._active_fetches.discard(appid)
+            if dialog:
+                try:
+                    dialog.accept()
+                except RuntimeError as e:
+                    logger.debug(f"[Library] Could not close the details dialog: {e}")
+            try:
+                self.accept()
+            except RuntimeError as e:
+                logger.debug(f"[Library] Could not close the dialog: {e}")
+            return
+
         self.main_window.job_queue.add_job(filepath, metadata)
         if dialog:
             try:

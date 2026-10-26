@@ -254,6 +254,40 @@ def create_at0m_tab(dialog) -> QWidget:
     act_row.addWidget(dialog.at0m_download_action_combo)
     cfg_layout.addLayout(act_row)
 
+    # Option 2b: Default DLC-Only Behavior
+    dlc_act_row = QHBoxLayout()
+    dlc_act_row.setContentsMargins(2, 2, 2, 2)
+    dlc_act_row.setSpacing(10)
+
+    dlc_act_title = QLabel("Default DLC-Only Behavior")
+    dlc_act_title.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 9pt;")
+    dlc_act_row.addWidget(dlc_act_title, stretch=1)
+
+    dialog.at0m_dlc_action_combo = QComboBox()
+    dialog.at0m_dlc_action_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+    dialog.at0m_dlc_action_combo.setFixedWidth(155)
+    dialog.at0m_dlc_action_combo.addItem("Always ask", "ask")
+    dialog.at0m_dlc_action_combo.addItem("Start Native (at0-m)", "native")
+    dialog.at0m_dlc_action_combo.addItem("Start ASSella", "assella")
+
+    saved_dlc_behavior = dialog.settings.value(
+        "at0m_default_dlc_action",
+        "ask",
+        type=str,
+    )
+    cur_dlc_idx = dialog.at0m_dlc_action_combo.findData(saved_dlc_behavior)
+    if cur_dlc_idx >= 0:
+        dialog.at0m_dlc_action_combo.setCurrentIndex(cur_dlc_idx)
+
+    dialog.at0m_dlc_action_combo.currentIndexChanged.connect(
+        lambda _i: dialog.settings.setValue(
+            "at0m_default_dlc_action",
+            dialog.at0m_dlc_action_combo.currentData(),
+        )
+    )
+    dlc_act_row.addWidget(dialog.at0m_dlc_action_combo)
+    cfg_layout.addLayout(dlc_act_row)
+
     # Separator
     sep2 = QFrame()
     sep2.setFrameShape(QFrame.Shape.HLine)
