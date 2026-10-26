@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.dialog_titlebar import DialogTitleBar
+from ui.dialogs.themed_message_box import ThemedMessageBox
 from ui.dialogs.game_details.depots_tab import MiniSwitchToggle
 from utils.settings import get_settings
 from utils.color_utils import get_best_foreground_color
@@ -367,9 +368,33 @@ class HubcapConfigDialog(QDialog):
         new_key = self.key_input.text().strip()
         old_key = str(self.hub_cfg.get("api_key", "")).strip()
 
-        if new_key != old_key and is_valid_hubcap_key(new_key):
-            new_hub["api_key"] = new_key
-            new_hub["api_key_timestamp"] = generate_hubcap_timestamp()
+        if new_key != old_key:
+            if not new_key:
+                new_hub["api_key"] = ""
+                new_ts = generate_hubcap_timestamp()
+                new_hub["api_key_timestamp"] = new_ts
+                try:
+                    get_settings().setValue("morrenus_api_key", "")
+                    get_settings().setValue("morrenus_api_key_timestamp", str(new_ts))
+                except Exception as exc:
+                    logger.debug(f"[HubcapConfigDialog] Could not clear settings key: {exc}")
+            elif is_valid_hubcap_key(new_key):
+                new_hub["api_key"] = new_key
+                new_ts = generate_hubcap_timestamp()
+                new_hub["api_key_timestamp"] = new_ts
+                try:
+                    get_settings().setValue("morrenus_api_key", new_key)
+                    get_settings().setValue("morrenus_api_key_timestamp", str(new_ts))
+                except Exception as exc:
+                    logger.debug(f"[HubcapConfigDialog] Could not update settings key: {exc}")
+            else:
+                ThemedMessageBox.warning(
+                    self,
+                    "Invalid API Key",
+                    "The entered Hubcap API key is invalid.\n\n"
+                    "Keys must be at least 8 characters long and contain only letters, numbers, hyphens, and underscores."
+                )
+                return
 
         # Preserve future option placeholders
         for k, v in self._future_toggles.items():

@@ -178,6 +178,55 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
             self.assertIsNotNone(dlg)
             dlg.close()
 
+    def test_lua_string_escaping_roundtrip(self):
+        """Ensure special characters in Lua config strings are escaped and roundtrip safely."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conf_path = Path(tmpdir) / "spacebunny.conf.lua"
+            special_url = 'https://api.example.com/v1?query="val"&path=foo\\bar'
+            special_preflight = 'preflight"quoted"\\backslash'
+            cfg = {
+                "standalone": False,
+                "hubcap": {
+                    "enabled": True,
+                    "api_key": "valid_key_12345",
+                    "api_key_timestamp": 123456,
+                    "base_url": special_url,
+                    "preflight": special_preflight,
+                }
+            }
+            ok = write_spacebunny_conf(cfg, conf_path)
+            self.assertTrue(ok)
+
+            # Check raw file contents to ensure quotes and backslashes are escaped
+            raw_text = conf_path.read_text(encoding="utf-8")
+            self.assertIn('\\"val\\"', raw_text)
+            self.assertIn('foo\\\\bar', raw_text)
+
+            # Read back and verify exact unescaping
+            read_back = read_spacebunny_conf(conf_path)
+            self.assertEqual(read_back["hubcap"]["base_url"], special_url)
+            self.assertEqual(read_back["hubcap"]["preflight"], special_preflight)
+
+    def test_undeploy_plugin_preserves_bak(self):
+        """Undeploying a plugin removes the active .lua file but preserves any .bak file."""
+        from unittest.mock import patch
+        from utils.plugin_manager import undeploy_plugin
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p_dir = Path(tmpdir)
+            active_lua = p_dir / "myplugin.lua"
+            bak_lua = p_dir / "myplugin.lua.bak"
+
+            active_lua.write_text("-- active code", encoding="utf-8")
+            bak_lua.write_text("-- backup code", encoding="utf-8")
+
+            with patch("utils.plugin_manager.get_sls_plugins_dirs", return_value=[p_dir]):
+                ok, msg = undeploy_plugin("myplugin.lua")
+                self.assertTrue(ok)
+                self.assertFalse(active_lua.exists())
+                self.assertTrue(bak_lua.exists())
+                self.assertEqual(bak_lua.read_text(encoding="utf-8"), "-- backup code")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -62,10 +62,44 @@ def _parse_bool(val_str: str) -> Optional[bool]:
     return None
 
 
+def escape_lua_string(val: str) -> str:
+    """Escape special characters for Lua double-quoted string literals."""
+    if not isinstance(val, str):
+        val = str(val)
+    return (
+        val.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\0", "\\0")
+    )
+
+
+def _unescape_lua_string(s: str) -> str:
+    """Unescape special characters from a Lua string literal."""
+    def _repl(match):
+        ch = match.group(1)
+        if ch in ('"', "'", "\\"):
+            return ch
+        if ch == "n":
+            return "\n"
+        if ch == "r":
+            return "\r"
+        if ch == "t":
+            return "\t"
+        if ch == "0":
+            return "\0"
+        return ch
+
+    return re.sub(r'\\(.)', _repl, s)
+
+
 def _parse_string(val_str: str) -> Optional[str]:
-    m = re.search(r'["\']([^"\']*)["\']', val_str)
+    m = re.search(r'"((?:\\.|[^"\\])*)"|\'((?:\\.|[^\'\\])*)\'', val_str)
     if m:
-        return m.group(1)
+        raw = m.group(1) if m.group(1) is not None else m.group(2)
+        return _unescape_lua_string(raw)
     return None
 
 
@@ -219,6 +253,12 @@ def read_spacebunny_conf(conf_path: Optional[Path] = None) -> Dict[str, Any]:
                 num = _parse_int(m.group(1))
                 if num is not None:
                     h["timeout_sec"] = num
+
+            m = re.search(r'\bpreflight\s*=\s*([^,\n\r]+)', hub_content)
+            if m:
+                s = _parse_string(m.group(1))
+                if s is not None:
+                    h["preflight"] = s
     except Exception as exc:
         logger.error(f"[SlsLuaConfig] Failed to read {path}: {exc}")
 
@@ -251,13 +291,13 @@ def write_spacebunny_conf(cfg: Dict[str, Any], conf_path: Optional[Path] = None)
             f"    standalone = {standalone},\n"
             "    hubcap = {\n"
             f"        enabled = {h_enabled},\n"
-            f'        api_key = "{h_api_key}",\n'
+            f'        api_key = "{escape_lua_string(h_api_key)}",\n'
             f"        api_key_timestamp = {h_ts},\n"
-            f'        base_url = "{h_base_url}",\n'
+            f'        base_url = "{escape_lua_string(h_base_url)}",\n'
             f"        timeout_sec = {h_timeout},\n"
             f"        write_config = {h_write_config},\n"
             f"        notify = {h_notify},\n"
-            f'        preflight = "{h_preflight}",\n'
+            f'        preflight = "{escape_lua_string(h_preflight)}",\n'
             f"        depot_index = {h_depot_index},\n"
             f"        write_depot_comments = {h_comments},\n"
             "    },\n"

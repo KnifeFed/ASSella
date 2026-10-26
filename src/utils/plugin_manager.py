@@ -695,7 +695,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
 
 
 def undeploy_plugin(filename: str) -> Tuple[bool, str]:
-    """Remove a plugin and its .bak backup from all SLSsteam plugin directories.
+    """Remove a plugin from all SLSsteam plugin directories while preserving any .bak backup.
     Also records the plugin as user-disabled in settings so startup does not auto-redeploy it.
     """
     set_plugin_user_disabled(filename, True)
@@ -710,10 +710,6 @@ def undeploy_plugin(filename: str) -> Tuple[bool, str]:
             if target_file.is_file():
                 target_file.unlink()
                 logger.info(f"[PluginManager] Removed plugin {target_file}")
-            bak_file = tdir / f"{filename}.bak"
-            if bak_file.is_file():
-                bak_file.unlink()
-                logger.info(f"[PluginManager] Removed backup plugin {bak_file}")
         except Exception as exc:
             errors.append(f"{tdir}: {exc}")
 
