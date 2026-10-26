@@ -351,16 +351,17 @@ def main() -> int:
     # ----------------------------- user accent preserved on controls
     print("\n=== user accent preserved on controls ===")
     from PyQt6.QtGui import QColor
-    check("#a1c9fd" in dlg.download_btn.styleSheet().lower(),
+    user_accent = (dlg.accent_color or "#a1c9fd").lower()
+    check(user_accent in dlg.download_btn.styleSheet().lower(),
           "Download button retains user accent color")
-    check("#a1c9fd" in dlg.table_widget.styleSheet().lower(),
+    check(user_accent in dlg.table_widget.styleSheet().lower(),
           "Table widget retains user accent color")
 
     test_color = QColor(60, 120, 240)
     dlg._apply_dynamic_theme(test_color)
     check(dlg._ambient_color == test_color,
           "_apply_dynamic_theme sets _ambient_color for background")
-    check("#a1c9fd" in dlg.download_btn.styleSheet().lower(),
+    check(user_accent in dlg.download_btn.styleSheet().lower(),
           "Download button keeps user accent color after ambient color update")
 
     dlg.close()

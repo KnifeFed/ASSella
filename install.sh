@@ -773,15 +773,26 @@ do_install() {
             ;;
     esac
 
-    # Promote verified download into place
-    rm -f "$INSTALL_DESTINATION/ASSella.AppImage"
+    # Promote verified download into place safely with rollback
+    local backup_target="$INSTALL_DESTINATION/ASSella.AppImage.bak"
+    local had_previous=0
+    if [ -f "$INSTALL_DESTINATION/ASSella.AppImage" ]; then
+        had_previous=1
+        mv -f "$INSTALL_DESTINATION/ASSella.AppImage" "$backup_target"
+    fi
+
     if ! mv -f "$DL_TMP" "$INSTALL_DESTINATION/ASSella.AppImage"; then
         echo -e "${RED}[ERROR] Failed to move verified binary into place.${NC}"
+        if [ "$had_previous" -eq 1 ] && [ -f "$backup_target" ]; then
+            echo -e "${YELLOW}[INFO] Restoring previous ASSella.AppImage from backup...${NC}"
+            mv -f "$backup_target" "$INSTALL_DESTINATION/ASSella.AppImage"
+        fi
         rm -f "$DL_TMP"
         pause_if_interactive
         return 1
     fi
 
+    rm -f "$backup_target"
     chmod +x "$INSTALL_DESTINATION/ASSella.AppImage"
 
     # Backup previous non-symlink ACCELA.AppImage

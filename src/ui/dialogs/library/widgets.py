@@ -892,7 +892,7 @@ class GameTileWidget(GameItemWidget):
         info_layout.addLayout(badges_row)
 
         layout.addLayout(info_layout)
-        self.update_status_label()
+        self.update_pinned_label()
 
     def set_image(self, pixmap: QPixmap) -> None:
         """Sets the image on the label with rounded corners."""

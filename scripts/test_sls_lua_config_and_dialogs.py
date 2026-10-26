@@ -48,6 +48,28 @@ from ui.dialogs.single_depot_dialog import SingleDepotSelectionDialog
 
 class TestSlsLuaConfigAndDialogs(unittest.TestCase):
 
+    def setUp(self):
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self._orig_xdg = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = self._tmp_dir.name
+        try:
+            from core.steam_helpers import invalidate_steam_env_cache
+            invalidate_steam_env_cache()
+        except Exception:
+            pass
+
+    def tearDown(self):
+        if self._orig_xdg is not None:
+            os.environ["XDG_CONFIG_HOME"] = self._orig_xdg
+        else:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        try:
+            from core.steam_helpers import invalidate_steam_env_cache
+            invalidate_steam_env_cache()
+        except Exception:
+            pass
+        self._tmp_dir.cleanup()
+
     def test_single_depot_dialog_dlc_method(self):
         """SingleDepotSelectionDialog must implement get_selected_dlc_data returning empty dict."""
         self.assertTrue(hasattr(SingleDepotSelectionDialog, "get_selected_dlc_data"))
@@ -99,6 +121,9 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
             ok = write_spacebunny_conf(cfg, conf_path)
             self.assertTrue(ok)
             self.assertTrue(conf_path.is_file())
+            # File permission check (0600 on POSIX)
+            mode = conf_path.stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600)
 
             # Read back
             cfg2 = read_spacebunny_conf(conf_path)
@@ -171,12 +196,122 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
         hdlg = HubcapConfigDialog()
         self.assertIsNotNone(hdlg.key_input)
     def test_settings_dialog_tabs_initialization(self):
-        """Ensure SettingsDialog loads all tabs without runtime import crashes."""
+        """Ensure SettingsDialog loads all tabs without runtime import crashes and without touching live host config."""
+        from unittest.mock import patch
         from ui.dialogs.settings import SettingsDialog
-        for tab_name in ("general", "downloads", "assella", "at0m", "morrenus", "tools", "advanced"):
-            dlg = SettingsDialog(initial_tab=tab_name)
-            self.assertIsNotNone(dlg)
-            dlg.close()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_cfg = Path(tmpdir) / "config.yaml"
+            fake_cfg.write_text("Plugins: yes\nAdditionalDepots:\nDecryptionKeys:\n", encoding="utf-8")
+            with patch("utils.yaml_config_manager.get_user_config_path", return_value=fake_cfg), \
+                 patch("utils.yaml.core.get_user_config_path", return_value=fake_cfg), \
+                 patch("utils.plugin_games.get_user_config_path", return_value=fake_cfg):
+                for tab_name in ("general", "downloads", "assella", "at0m", "morrenus", "tools", "advanced"):
+                    dlg = SettingsDialog(initial_tab=tab_name)
+                    self.assertIsNotNone(dlg)
+                    dlg.close()
+
+    def test_generate_hubcap_timestamp_chronological(self):
+        """Verify that Hubcap timestamp is 14-digit YYYYMMDDHHMMSS, strictly monotonic, and sortable."""
+        from utils.sls_lua_config import generate_hubcap_timestamp, _timestamp_to_sort_key
+        ts = generate_hubcap_timestamp()
+        s = str(ts)
+        self.assertEqual(len(s), 14)
+        self.assertTrue(s.startswith("202"))
+        self.assertEqual(_timestamp_to_sort_key(ts), ts)
+
+        # Legacy timestamps (e.g. day 23 vs day 24 in 2026) sort cleanly
+        legacy_older = 1012232026
+        legacy_newer = 4518242026
+        self.assertLess(_timestamp_to_sort_key(legacy_older), _timestamp_to_sort_key(legacy_newer))
+        # New 14-digit timestamps always sort newer than legacy 10-digit
+        self.assertGreater(_timestamp_to_sort_key(ts), _timestamp_to_sort_key(legacy_newer))
+
+    def test_atom_migration_aborts_on_unkeyed_depots(self):
+        """AT0-M migration must abort without retiring markers if any required depot lacks a key."""
+        from unittest.mock import patch, MagicMock
+        from utils.plugin_games import migrate_game_to_atom
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_p = Path(tmpdir)
+            cfg = tmp_p / "config.yaml"
+            cfg.write_text("Plugins: yes\nAdditionalDepots:\nDecryptionKeys:\n", encoding="utf-8")
+            acf = tmp_p / "appmanifest_12345.acf"
+            acf.write_text('"AppState" {}\n', encoding="utf-8")
+
+            game_data = {
+                "appid": "12345",
+                "game_name": "Test Unkeyed Game",
+                "install_path": str(tmp_p),
+                "appmanifest_path": str(acf),
+            }
+            settings = MagicMock()
+            settings.value.return_value = False
+
+            # Depots 1001 and 1002, but key ONLY provided for 1001 (1002 is unkeyed)
+            mock_depots = ["1001", "1002"]
+            mock_keys = {"1001": "a" * 64}
+
+            with patch("utils.plugin_games.get_user_config_path", return_value=cfg), \
+                 patch("utils.plugin_games.can_use_atom_mode", return_value=(True, "")), \
+                 patch("utils.plugin_games.collect_game_depots_and_keys", return_value=(mock_depots, mock_keys, {})), \
+                 patch("utils.plugin_games._remove_accela_markers") as remove_markers:
+                res = migrate_game_to_atom(game_data, settings=settings)
+
+            self.assertFalse(res["success"])
+            self.assertIn("1002", res["error"])
+            # Markers must NOT be removed and ACF must NOT be deleted
+            remove_markers.assert_not_called()
+            self.assertTrue(acf.exists())
+
+    def test_lua_string_escaping_roundtrip(self):
+        """Ensure special characters in Lua config strings are escaped and roundtrip safely."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conf_path = Path(tmpdir) / "spacebunny.conf.lua"
+            special_url = 'https://api.example.com/v1?query="val"&path=foo\\bar'
+            special_preflight = 'preflight"quoted"\\backslash'
+            cfg = {
+                "standalone": False,
+                "hubcap": {
+                    "enabled": True,
+                    "api_key": "valid_key_12345",
+                    "api_key_timestamp": 123456,
+                    "base_url": special_url,
+                    "preflight": special_preflight,
+                }
+            }
+            ok = write_spacebunny_conf(cfg, conf_path)
+            self.assertTrue(ok)
+
+            # Check raw file contents to ensure quotes and backslashes are escaped
+            raw_text = conf_path.read_text(encoding="utf-8")
+            self.assertIn('\\"val\\"', raw_text)
+            self.assertIn('foo\\\\bar', raw_text)
+
+            # Read back and verify exact unescaping
+            read_back = read_spacebunny_conf(conf_path)
+            self.assertEqual(read_back["hubcap"]["base_url"], special_url)
+            self.assertEqual(read_back["hubcap"]["preflight"], special_preflight)
+
+    def test_undeploy_plugin_preserves_bak(self):
+        """Undeploying a plugin removes the active .lua file but preserves any .bak file."""
+        from unittest.mock import patch
+        from utils.plugin_manager import undeploy_plugin
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p_dir = Path(tmpdir)
+            active_lua = p_dir / "myplugin.lua"
+            bak_lua = p_dir / "myplugin.lua.bak"
+
+            active_lua.write_text("-- active code", encoding="utf-8")
+            bak_lua.write_text("-- backup code", encoding="utf-8")
+
+            with patch("utils.plugin_manager.get_sls_plugins_dirs", return_value=[p_dir]):
+                ok, msg = undeploy_plugin("myplugin.lua")
+                self.assertTrue(ok)
+                self.assertFalse(active_lua.exists())
+                self.assertTrue(bak_lua.exists())
+                self.assertEqual(bak_lua.read_text(encoding="utf-8"), "-- backup code")
 
 
 if __name__ == "__main__":

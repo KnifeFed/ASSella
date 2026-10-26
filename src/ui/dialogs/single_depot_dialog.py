@@ -874,14 +874,13 @@ class SingleDepotSelectionDialog(QDialog):
             except Exception as e:
                 logger.debug(f"[SingleDepot] API enrichment error: {e}")
 
-            # 3. Fallback to SteamDB scraper if byparr is running
+            # 3. Fallback to SteamDB scraper (via Fast-Path race or Byparr)
             try:
-                from core.steamdb_scraper import ByparrManager, SteamDBScraper
-                if ByparrManager.is_running():
-                    scraper = SteamDBScraper()
-                    depots_info = scraper.get_app_depots(str(self.app_id))
-                    if depots_info:
-                        return depots_info
+                from core.steamdb_scraper import SteamDBScraper
+                scraper = SteamDBScraper()
+                depots_info = scraper.get_app_depots(str(self.app_id))
+                if depots_info:
+                    return depots_info
             except Exception:
                 pass
             return {}

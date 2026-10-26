@@ -653,8 +653,9 @@ class TestMigrationOrdering(unittest.TestCase):
             self.assertTrue(result["success"])
             self.assertEqual(result["depots_count"], 1)
             self.assertEqual(result["keys_count"], 2)
-            self.assertTrue(result.get("acf_deleted"))
-            self.assertFalse(acf.exists())
+            self.assertTrue(result.get("acf_updated"))
+            self.assertTrue(acf.exists())
+            self.assertIn('"StateFlags"\t\t"6"', acf.read_text(encoding="utf-8"))
 
     def test_explicit_depot_selection_wins_over_saved_selection(self):
         """A current dialog selection must not be replaced by stale QSettings."""

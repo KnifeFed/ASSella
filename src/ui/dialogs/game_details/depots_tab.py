@@ -1941,24 +1941,23 @@ def init_depots_tab(dialog) -> None:
                             "dl_str": "",
                         }
 
-            # 2. Query SteamDB if Byparr is active
-            if ByparrManager.is_running():
-                try:
-                    scraper = SteamDBScraper()
-                    sdb_depots = scraper.get_app_depots(appid_str)
-                    if sdb_depots:
-                        for did, sdata in sdb_depots.items():
-                            if did in new_enrichments:
-                                if sdata.get("name"):
-                                    new_enrichments[did]["name"] = sdata["name"]
-                                if sdata.get("oslist"):
-                                    new_enrichments[did]["oslist"] = sdata["oslist"]
-                                if sdata.get("size_str"):
-                                    new_enrichments[did]["size_str"] = sdata["size_str"]
-                            else:
-                                new_enrichments[did] = sdata
-                except Exception as e:
-                    logger.debug(f"[DepotsTab] SteamDB enrichment failed: {e}")
+            # 2. Query SteamDB (via Fast-Path race or Byparr)
+            try:
+                scraper = SteamDBScraper()
+                sdb_depots = scraper.get_app_depots(appid_str)
+                if sdb_depots:
+                    for did, sdata in sdb_depots.items():
+                        if did in new_enrichments:
+                            if sdata.get("name"):
+                                new_enrichments[did]["name"] = sdata["name"]
+                            if sdata.get("oslist"):
+                                new_enrichments[did]["oslist"] = sdata["oslist"]
+                            if sdata.get("size_str"):
+                                new_enrichments[did]["size_str"] = sdata["size_str"]
+                        else:
+                            new_enrichments[did] = sdata
+            except Exception as e:
+                logger.debug(f"[DepotsTab] SteamDB enrichment failed: {e}")
 
             if new_enrichments:
                 db.save_depot_enrichments(appid_str, new_enrichments)

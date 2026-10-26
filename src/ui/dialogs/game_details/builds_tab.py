@@ -248,8 +248,8 @@ def init_builds_tab(dialog) -> None:
     page_layout.addWidget(dialog.builds_bottom_bar)
 
     try:
-        from core.steamdb_scraper import ByparrManager
-        has_byparr = ByparrManager.is_available()
+        from core.steamdb_scraper import ByparrManager, cffi_requests
+        has_byparr = ByparrManager.is_available() or (cffi_requests is not None)
     except Exception:
         has_byparr = False
     dialog.builds_bottom_bar.setVisible(has_byparr)
@@ -505,19 +505,39 @@ def update_card_depots(dialog, card: QFrame, build_id: str, depots: dict) -> Non
     card._depots_container.setVisible(True)
 
 
-def fetch_steamdb_builds_async(dialog) -> None:
+def _restore_refresh_btn(dialog) -> None:
     if sip.isdeleted(dialog):
         return
+    ghost_style = """
+        QPushButton {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: #FFFFFF;
+            font-weight: 600;
+            font-size: 9pt;
+        }
+        QPushButton:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #FFFFFF;
+        }
+        QPushButton:disabled {
+            background-color: rgba(255, 255, 255, 0.02);
+            color: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    """
+    dialog.builds_refresh_btn.setStyleSheet(ghost_style)
+    dialog.builds_refresh_btn.setText("⟳  Refresh")
+    dialog.builds_refresh_btn.setEnabled(True)
+    dialog.builds_refresh_btn.setToolTip("")
 
-    try:
-        from core.steamdb_scraper import ByparrManager
-        if not ByparrManager.is_available():
-            on_builds_error(dialog, "Solver not configured")
-            return
-    except Exception:
-        on_builds_error(dialog, "Solver unavailable")
+
+def fetch_steamdb_builds_async(dialog) -> None:
+    if sip.isdeleted(dialog) or not hasattr(dialog, "steamdb_scraper"):
         return
 
+    dialog._fetching_byparr_deep = False
     dialog.builds_refresh_btn.setText("⟳  Checking...")
     dialog.builds_refresh_btn.setEnabled(False)
 
@@ -527,9 +547,16 @@ def fetch_steamdb_builds_async(dialog) -> None:
     def _worker():
         try:
             aid = int(dialog.appid) if dialog.appid.isdigit() else 0
-            data = dialog.steamdb_scraper.get_patchnotes(aid, limit=20)
+            data = dialog.steamdb_scraper.get_patchnotes(aid, limit=50)
             if not sip.isdeleted(dialog):
-                dialog.builds_loaded.emit(data)
+                if data:
+                    dialog.builds_loaded.emit(data)
+                else:
+                    from core.steamdb_scraper import ByparrManager
+                    if not ByparrManager.is_available():
+                        dialog.builds_error.emit("Cloudflare challenge encountered. Please configure Byparr or retry.")
+                    else:
+                        dialog.builds_error.emit("No build history found.")
         except Exception as e:
             logger.error(f"Failed to fetch builds for {dialog.appid}: {e}")
             if not sip.isdeleted(dialog):
@@ -541,11 +568,12 @@ def fetch_steamdb_builds_async(dialog) -> None:
 def on_builds_loaded(dialog, builds: list) -> None:
     if sip.isdeleted(dialog):
         return
-    from core.steamdb_scraper import ByparrManager
+    from core.steamdb_scraper import ByparrManager, STEAMDB_BASE_URL
     has_byparr = ByparrManager.is_available()
-    dialog.builds_refresh_btn.setText("⟳  Refresh")
-    dialog.builds_refresh_btn.setEnabled(True)
-    dialog.builds_refresh_btn.setToolTip("")
+
+    is_rss_fallback = any(b.get("_source") == "rss" for b in builds) if builds else False
+    is_deep_fetching = getattr(dialog, "_fetching_byparr_deep", False)
+
     if builds:
         aid = int(dialog.appid) if dialog.appid.isdigit() else 0
         dialog.builds_cache.save_builds(aid, builds)
@@ -553,11 +581,56 @@ def on_builds_loaded(dialog, builds: list) -> None:
         dialog.builds_center_stack.setCurrentIndex(1)
         if hasattr(dialog, "builds_bottom_bar") and dialog.builds_bottom_bar:
             dialog.builds_bottom_bar.setVisible(True)
+
+        if is_rss_fallback and has_byparr and not is_deep_fetching:
+            dialog._fetching_byparr_deep = True
+            greyscale_style = """
+                QPushButton {
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.4);
+                    font-weight: 600;
+                    font-size: 9pt;
+                }
+            """
+            dialog.builds_refresh_btn.setStyleSheet(greyscale_style)
+            dialog.builds_refresh_btn.setText("⟳  Loading full history...")
+            dialog.builds_refresh_btn.setEnabled(False)
+            dialog.builds_refresh_btn.setToolTip("Only recent 10 builds loaded. Fetching full build history in background via Byparr...")
+
+            def _byparr_worker():
+                try:
+                    url = f"{STEAMDB_BASE_URL}/app/{aid}/patchnotes/"
+                    byparr_html = dialog.steamdb_scraper.fetch_via_byparr(url, timeout_seconds=60)
+                    if byparr_html and not sip.isdeleted(dialog):
+                        more_builds = dialog.steamdb_scraper._parse_patchnotes_html(byparr_html, limit=50)
+                        if more_builds and len(more_builds) > len(builds):
+                            for mb in more_builds:
+                                mb["_source"] = "byparr"
+                            dialog.builds_loaded.emit(more_builds)
+                            return
+                except Exception as e:
+                    logger.debug(f"[BuildsTab] Byparr background deep fetch error: {e}")
+                finally:
+                    if not sip.isdeleted(dialog):
+                        dialog._fetching_byparr_deep = False
+                        _restore_refresh_btn(dialog)
+
+            threading.Thread(target=_byparr_worker, daemon=True).start()
+            return
+        else:
+            dialog._fetching_byparr_deep = False
+            _restore_refresh_btn(dialog)
     elif dialog.builds_cards_layout.count() > 1:
+        dialog._fetching_byparr_deep = False
+        _restore_refresh_btn(dialog)
         dialog.builds_center_stack.setCurrentIndex(1)
         if hasattr(dialog, "builds_bottom_bar") and dialog.builds_bottom_bar:
             dialog.builds_bottom_bar.setVisible(True)
     else:
+        dialog._fetching_byparr_deep = False
+        _restore_refresh_btn(dialog)
         dialog.builds_center_stack.setCurrentIndex(2)
         if hasattr(dialog, "builds_bottom_bar") and dialog.builds_bottom_bar:
             dialog.builds_bottom_bar.setVisible(has_byparr)
@@ -568,8 +641,8 @@ def on_builds_error(dialog, err_msg: str) -> None:
         return
     from core.steamdb_scraper import ByparrManager
     has_byparr = ByparrManager.is_available()
-    dialog.builds_refresh_btn.setText("⟳  Refresh")
-    dialog.builds_refresh_btn.setEnabled(True)
+    dialog._fetching_byparr_deep = False
+    _restore_refresh_btn(dialog)
     if dialog.builds_cards_layout.count() > 1:
         dialog.builds_center_stack.setCurrentIndex(1)
         dialog.builds_refresh_btn.setToolTip(f"Build history currently unavailable. Showing cached builds.\n(Error: {err_msg})")
