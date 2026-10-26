@@ -189,6 +189,53 @@ def _normalize_state_flags(content: str) -> Tuple[str, bool]:
     return new_content, (new_content != content)
 
 
+def set_acf_state_flags(acf_path: Union[str, Path], state_flags: int = 6) -> bool:
+    """Set StateFlags in an existing ACF file to state_flags (default 6 = UpdateRequired | FullyInstalled).
+    Also ensures UpdateResult is 0 so Steam triggers a clean verification pass.
+    """
+    path = Path(acf_path)
+    if not path.is_file():
+        return False
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        m_flags = re.search(r'"StateFlags"\s*"(\d+)"', content)
+        if m_flags:
+            new_content = re.sub(
+                r'"StateFlags"\s*"\d+"',
+                f'"StateFlags"\t\t"{state_flags}"',
+                content,
+                count=1,
+            )
+        else:
+            m_appstate = re.search(r'("AppState"\s*\{)', content)
+            if m_appstate:
+                pos = m_appstate.end()
+                new_content = (
+                    content[:pos]
+                    + f'\n\t"StateFlags"\t\t"{state_flags}"'
+                    + content[pos:]
+                )
+            else:
+                new_content = content + f'\n"StateFlags"\t\t"{state_flags}"\n'
+
+        m_upd = re.search(r'"UpdateResult"\s*"(\d+)"', new_content)
+        if m_upd and m_upd.group(1) != "0":
+            new_content = re.sub(
+                r'"UpdateResult"\s*"\d+"',
+                '"UpdateResult"\t\t"0"',
+                new_content,
+                count=1,
+            )
+
+        ok = atomic_write_acf(str(path), new_content)
+        if ok:
+            logger.info(f"[SteamACF] Set StateFlags={state_flags} on {acf_path}")
+        return ok
+    except Exception as e:
+        logger.warning(f"[SteamACF] Failed setting StateFlags={state_flags} on {acf_path}: {e}")
+        return False
+
+
 def _discover_depots_from_disk(acf_path: str, appid: str) -> List[str]:
     """Discover depot IDs from .manifest files in the depotcache directory.
 

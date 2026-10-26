@@ -1326,19 +1326,26 @@ def migrate_game_to_atom(
         adopted_keys = dict(candidate_keys)
 
     acf_path = find_appmanifest_path(game_data, appid_str)
+    acf_updated = False
     if acf_path and os.path.exists(acf_path):
-        # Delete the old ACF during transfer to let Steam create a fresh one.
-        # Direct ACF editing is fragile; Steam's own pipeline generates correct
-        # manifests when it discovers the game in the common folder.
+        # Update StateFlags to 6 (UpdateRequired | FullyInstalled) instead of deleting.
+        # This signals to Steam that files exist on disk but an update/verification pass is required.
         try:
-            os.remove(acf_path)
-            logger.info(
-                f"[PluginGames] Deleted old ACF {acf_path} for {appid_str}; "
-                "Steam will recreate it on next scan."
-            )
+            from utils.steam_acf import set_acf_state_flags
+
+            if set_acf_state_flags(acf_path, 6):
+                acf_updated = True
+                logger.info(
+                    f"[PluginGames] Set StateFlags=6 on ACF {acf_path} for {appid_str}; "
+                    "Steam will see update available and verify/adopt files."
+                )
+            else:
+                logger.warning(
+                    f"[PluginGames] Could not update StateFlags on ACF {acf_path}"
+                )
         except Exception as e:
             logger.warning(
-                f"[PluginGames] Could not delete ACF {acf_path}: {e}"
+                f"[PluginGames] Error updating StateFlags on ACF {acf_path}: {e}"
             )
 
     # 6. Sync manifests to central depotcache
@@ -1362,7 +1369,8 @@ def migrate_game_to_atom(
         "success": True,
         "appid": appid_str,
         "name": game_name,
-        "acf_deleted": bool(acf_path),
+        "acf_updated": acf_updated,
+        "acf_deleted": False,
         "marker_retained": marker_retained,
         "marker_retained_reason": "; ".join(marker_retained_reasons),
         "depots_count": len(adopted_depots),

@@ -1947,19 +1947,21 @@ class LibraryActionsMixin:
             or is_plugin_game(appid)
         )
 
-        # AT0M mode: delete ACF directly and let Steam/SLSsteam recreate it.
-        # In-place ACF editing is fragile; Steam's pipeline generates correct
-        # manifests when it discovers the game.
+        # AT0M mode: set StateFlags to 6 in ACF so Steam treats update as available
         if acf_existed and is_at0m:
-            if not self._confirm_action(
-                "Confirm", "Remove manifest file? Steam will recreate it."
-            ):
-                return
-            try:
-                os.remove(acf)
-                logger.info(f"[Library] Deleted ACF {acf} for {appid} (AT0M mode)")
-            except Exception as e:
-                logger.warning(f"Could not remove manifest file {acf}: {e}")
+            from utils.steam_acf import set_acf_state_flags
+
+            ok = set_acf_state_flags(acf, 6)
+            if ok:
+                logger.info(f"[Library] Set StateFlags=6 on ACF {acf} for {appid} (AT0M mode)")
+                ThemedMessageBox.information(
+                    self,
+                    "Installation Set to Update",
+                    f"Set state to update required (StateFlags=6) for {game_data.get('game_name', appid)}.\n\n"
+                    "Steam will now show an update available to verify and adopt existing files."
+                )
+            else:
+                logger.warning(f"Could not set StateFlags on manifest file {acf}")
         # First try: repair the ACF in-place if it exists and is broken (ASSella mode)
         elif acf_existed:
             try:
