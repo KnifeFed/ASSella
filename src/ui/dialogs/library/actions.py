@@ -2244,6 +2244,7 @@ class LibraryActionsMixin:
                                     depot_names=d_names,
                                     dlc_appids=dlc_appids,
                                     is_dlc_only=bool(rec.get("dlc_only", False)),
+                                    app_token=rec.get("token") or (game_data.get("app_token") or game_data.get("token") if game_data else None),
                                 )
                             except Exception as _e:
                                 logger.warning(f"Could not sync AT0-M depots after selection: {_e}")

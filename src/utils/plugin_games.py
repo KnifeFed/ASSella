@@ -184,6 +184,8 @@ def register_plugin_game(
     depot_names: Optional[Dict[Union[str, int], str]] = None,
     dlc_appids: Optional[List[Union[str, int]]] = None,
     is_dlc_only: Optional[bool] = None,
+    app_token: Optional[Union[str, int]] = None,
+    app_tokens: Optional[Dict[Union[str, int], str]] = None,
 ) -> bool:
     """
     Register a newly installed or downloaded game as plugin-managed.
@@ -241,6 +243,41 @@ def register_plugin_game(
     published_ids = set(clean_depots) | set(clean_dlc_appids) | {appid_str} | set(SHARED_REDISTS)
     published_keys = {did: key for did, key in clean_keys.items() if did in published_ids}
 
+    # Collect AppTokens to inject
+    tokens_to_inject: Dict[str, str] = {}
+    if app_token:
+        tokens_to_inject[appid_str] = str(app_token).strip()
+    if app_tokens:
+        for aid, tok in app_tokens.items():
+            aid_s = str(aid).strip()
+            tok_s = str(tok).strip()
+            if aid_s and tok_s:
+                tokens_to_inject[aid_s] = tok_s
+
+    # If base token not provided, query DepotKeyManager
+    if appid_str not in tokens_to_inject:
+        try:
+            from managers.depot_key_manager import DepotKeyManager
+            dkm_tok = DepotKeyManager.get_instance().get_app_token(appid_str)
+            if dkm_tok:
+                tokens_to_inject[appid_str] = str(dkm_tok).strip()
+        except Exception as e:
+            logger.debug(f"[PluginGames] Could not query DepotKeyManager for token: {e}")
+
+    # Query DLC tokens in DepotKeyManager if DLC AppIDs are present
+    for dlc_id in clean_dlc_appids:
+        if dlc_id not in tokens_to_inject:
+            try:
+                from managers.depot_key_manager import DepotKeyManager
+                dlc_tok = DepotKeyManager.get_instance().get_app_token(dlc_id)
+                if dlc_tok:
+                    tokens_to_inject[dlc_id] = str(dlc_tok).strip()
+            except Exception as e:
+                logger.debug(f"[PluginGames] Could not query DepotKeyManager for DLC token {dlc_id}: {e}")
+
+    if is_dlc_only:
+        tokens_to_inject.pop(appid_str, None)
+
     lib = load_plugin_library()
     game_record = {
         "appid": appid_str,
@@ -251,6 +288,8 @@ def register_plugin_game(
         "depot_names": clean_depot_names,
         "dlc_only": is_dlc_only,
         "dlc_appids": clean_dlc_appids,
+        "token": tokens_to_inject.get(appid_str, ""),
+        "app_tokens": tokens_to_inject,
         "updated_at": int(time.time()),
         "source": "plugin_native",
     }
@@ -274,6 +313,7 @@ def register_plugin_game(
             # DLC-only: add DLC AppIDs to AdditionalApps, NOT the base game appid.
             for dlc_id in clean_dlc_appids:
                 editor.add_app(dlc_id, comment=f"{name} DLC ({dlc_id})")
+            editor.remove_app_token(appid_str)
         else:
             # Full game owns its base and discovered DLC entitlements.
             editor.add_app(appid_str, comment=name)
@@ -310,6 +350,13 @@ def register_plugin_game(
             else:
                 key_comment = build_key_comment(name, did, clean_depot_names.get(did, ""), appid_str)
             editor.add_key(did, key, comment=key_comment)
+
+        # Add AppTokens with game comment
+        for tok_aid, tok_val in tokens_to_inject.items():
+            if is_dlc_only and tok_aid == appid_str:
+                continue
+            tok_comment = f"[DLC] {name} ({tok_aid})" if tok_aid != appid_str else name
+            editor.add_token(tok_aid, tok_val, comment=tok_comment)
 
     if not editor.committed_successfully:
         logger.error(
@@ -720,7 +767,7 @@ def collect_game_depots_and_keys(
     the user's depot scope is the caller's decision, so the caller can report
     what it left out.
     """
-    from utils.lua_parsing import iter_live_matches
+    from utils.lua_parsing import iter_live_matches, extract_all_tokens, extract_token
 
     appid_str = str(appid).strip()
     depot_ids: List[str] = []
@@ -773,18 +820,31 @@ def collect_game_depots_and_keys(
         logger.debug(f"[PluginGames] DepotKeyManager lookup error for {appid_str}: {e}")
 
     # 4. Extract from cached Lua or manifest zip
-    def _extract_keys_from_lua(lua_text: str):
+    def _extract_keys_and_tokens_from_lua(lua_text: str):
         for m in iter_live_matches(lua_text, r'addappid\((\d+),\s*\d+,\s*["\']([a-fA-F0-9]{64})["\']\)'):
             did, key = m.group(1), m.group(2).lower()
             decryption_keys[did] = key
             if did != appid_str and did not in depot_ids:
                 depot_ids.append(did)
+        try:
+            tokens = extract_all_tokens(lua_text)
+            if not tokens:
+                s_tok = extract_token(lua_text, appid_str)
+                if s_tok:
+                    tokens[appid_str] = s_tok
+            if tokens:
+                from managers.depot_key_manager import DepotKeyManager
+                dkm = DepotKeyManager.get_instance()
+                for aid, tok in tokens.items():
+                    dkm.save_app_token(aid, tok)
+        except Exception as e:
+            logger.debug(f"[PluginGames] Could not save app token for {appid_str}: {e}")
 
     lua_file = get_base_path() / "cached_luas" / f"{appid_str}.lua"
     if lua_file.exists():
         try:
             with open(lua_file, "r", encoding="utf-8", errors="ignore") as lf:
-                _extract_keys_from_lua(lf.read())
+                _extract_keys_and_tokens_from_lua(lf.read())
         except Exception as e:
             logger.debug(f"[PluginGames] Could not read cached Lua for {appid_str}: {e}")
 
@@ -798,7 +858,7 @@ def collect_game_depots_and_keys(
             with zipfile.ZipFile(zip_file, "r") as zf:
                 for name in zf.namelist():
                     if name.endswith(".lua"):
-                        _extract_keys_from_lua(zf.read(name).decode("utf-8", errors="ignore"))
+                        _extract_keys_and_tokens_from_lua(zf.read(name).decode("utf-8", errors="ignore"))
         except Exception as e:
             logger.debug(f"[PluginGames] Could not read manifest zip for {appid_str}: {e}")
 
@@ -823,11 +883,22 @@ def collect_game_depots_and_keys(
                                 fresh_keys[did_f] = k_f
                 if fresh_keys:
                     from managers.depot_key_manager import DepotKeyManager
-                    DepotKeyManager.get_instance().save_depot_keys(appid_str, fresh_keys)
+                    dkm = DepotKeyManager.get_instance()
+                    dkm.save_depot_keys(appid_str, fresh_keys)
                     for did_f, k_f in fresh_keys.items():
                         decryption_keys[did_f] = k_f
                         if did_f != appid_str and did_f not in depot_ids:
                             depot_ids.append(did_f)
+                    try:
+                        fresh_tokens = extract_all_tokens(lua_txt)
+                        if not fresh_tokens:
+                            s_tok = extract_token(lua_txt, appid_str)
+                            if s_tok:
+                                fresh_tokens[appid_str] = s_tok
+                        for aid, tok in fresh_tokens.items():
+                            dkm.save_app_token(aid, tok)
+                    except Exception as e:
+                        logger.debug(f"[PluginGames] Emergency token save error: {e}")
                     logger.info(f"[PluginGames] Recovered {len(fresh_keys)} fresh key(s) from Hubcap for {appid_str}.")
         except Exception as e:
             logger.warning(f"[PluginGames] Hubcap emergency key recovery failed for {appid_str}: {e}")
@@ -1247,6 +1318,7 @@ def migrate_game_to_atom(
         depot_names=depot_names,
         dlc_appids=dlc_appids if is_dlc else None,
         is_dlc_only=is_dlc,
+        app_token=game_data.get("app_token") or game_data.get("token"),
     )
     if not registered:
         return {

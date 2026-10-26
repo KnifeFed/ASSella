@@ -321,8 +321,8 @@ class ByparrManager:
             )
             try:
                 byparr_logfile.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[SteamDB] Could not close byparr logfile handle in parent: {e}")
             cls._managed = True
 
             # Wait up to 10 seconds for service readiness

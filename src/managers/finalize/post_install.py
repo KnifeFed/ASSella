@@ -492,6 +492,7 @@ class PostInstallMixin:
                                 installdir=installdir,
                                 dlc_appids=sync_dlc_appids,
                                 is_dlc_only=bool(prior_record.get("dlc_only", False)),
+                                app_token=self.game_data.get("app_token") or self.game_data.get("token"),
                             )
                             logger.info(f"[TaskManager] Successfully synchronized AT0-M / SLSsteam registration for {appid}")
                         except Exception as _reg_err:
