@@ -290,6 +290,54 @@ Lobster = {
 
         print(f"  [PASS] Plugin version resolution verified (SpaceBunny: {sb_ver}, Lobster: {lob_ver})")
 
+    def test_06_platform_mismatch_and_dlc_badge(self):
+        """Verify PlatformMismatchDialog styling/text and single DLC Only badge in GameListWidget."""
+        from ui.dialogs.platform_mismatch_dialog import (
+            PlatformMismatchDialog,
+            ACTION_PROCEED,
+            ACTION_FORCE_PROTON,
+        )
+        from ui.dialogs.library.widgets import GameItemWidget
+
+        # 1. PlatformMismatchDialog
+        details = {
+            "appid": "2686690",
+            "game_name": "Suika Shapes",
+            "linux_depots": ["2686693"],
+            "windows_depots": ["2686691", "2686692"],
+            "preferred_tool": "proton-cachyos-slr",
+        }
+        dlg = PlatformMismatchDialog(details=details)
+        self.assertEqual(ACTION_PROCEED, 1)
+        self.assertEqual(ACTION_FORCE_PROTON, ACTION_PROCEED)
+        self.assertEqual(dlg.btn_proceed.text(), "Proceed")
+
+        # Find description label and verify text
+        from PyQt6.QtWidgets import QLabel
+        desc_labels = [w for w in dlg.findChildren(QLabel) if "Only Windows keys are available" in w.text()]
+        self.assertTrue(len(desc_labels) > 0, "Expected description text to mention 'Only Windows keys are available'")
+        self.assertIn("Please switch to Proton in Steam compatibility options after install.", desc_labels[0].text())
+
+        # 2. GameItemWidget: single DLC badge
+        game_data = {
+            "appid": "1868140",
+            "game_name": "DAVE THE DIVER",
+            "size": 5760000000,
+            "is_dlc_only": True,
+        }
+        widget = GameItemWidget(
+            game_data=game_data,
+            size_str="5.76 GB",
+            accent_color="#E67E22",
+            background_color="#111318",
+        )
+        # Ensure name_row does NOT have duplicate dlc_mode_badge
+        self.assertIsNone(widget.dlc_mode_badge)
+        # Ensure status_label on right displays [DLC Only]
+        self.assertEqual(widget.status_label.text(), "[DLC Only]")
+
+        print("  [PASS] PlatformMismatchDialog and single DLC badge verified")
+
 
 if __name__ == "__main__":
     unittest.main()

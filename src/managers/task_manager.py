@@ -860,6 +860,7 @@ class TaskManager(
                 )
                 from ui.dialogs.platform_mismatch_dialog import (
                     PlatformMismatchDialog,
+                    ACTION_PROCEED,
                     ACTION_FORCE_PROTON,
                     ACTION_ASSELLA_DOWNLOAD,
                     ACTION_CANCEL,
@@ -877,9 +878,9 @@ class TaskManager(
                     )
                     m_dlg.exec()
                     m_act = m_dlg.get_action()
-                    if m_act == ACTION_FORCE_PROTON:
-                        pref_tool = mismatch_details.get("preferred_tool", "proton_experimental")
-                        force_proton_for_app(appid_str, tool_name=pref_tool, restart_steam_if_running=True)
+                    if m_act in (ACTION_PROCEED, ACTION_FORCE_PROTON):
+                        # Proceed normally without forcing Proton or restarting Steam
+                        pass
                     elif m_act == ACTION_ASSELLA_DOWNLOAD:
                         use_native_steam = False
                     else:  # ACTION_CANCEL
@@ -1224,6 +1225,7 @@ class TaskManager(
             )
             from ui.dialogs.platform_mismatch_dialog import (
                 PlatformMismatchDialog,
+                ACTION_PROCEED,
                 ACTION_FORCE_PROTON,
                 ACTION_ASSELLA_DOWNLOAD,
                 ACTION_CANCEL,
@@ -1239,9 +1241,9 @@ class TaskManager(
                 )
                 m_dlg.exec()
                 m_act = m_dlg.get_action()
-                if m_act == ACTION_FORCE_PROTON:
-                    pref_tool = mismatch_details.get("preferred_tool", "proton_experimental")
-                    force_proton_for_app(app_id_str, tool_name=pref_tool, restart_steam_if_running=True)
+                if m_act in (ACTION_PROCEED, ACTION_FORCE_PROTON):
+                    # Proceed normally without forcing Proton or restarting Steam
+                    pass
                 elif m_act == ACTION_ASSELLA_DOWNLOAD:
                     logger.info(f"[TaskManager] User chose ASSella downloader for {app_id_str}")
                     if self.main_window and hasattr(self.main_window, "open_download_dialog"):

@@ -1339,6 +1339,7 @@ class FetchManifestDialog(QDialog):
             )
             from ui.dialogs.platform_mismatch_dialog import (
                 PlatformMismatchDialog,
+                ACTION_PROCEED,
                 ACTION_FORCE_PROTON,
                 ACTION_ASSELLA_DOWNLOAD,
                 ACTION_CANCEL,
@@ -1355,12 +1356,9 @@ class FetchManifestDialog(QDialog):
                 )
                 m_dlg.exec()
                 m_act = m_dlg.get_action()
-                if m_act == ACTION_FORCE_PROTON:
-                    pref_tool = mismatch_details.get("preferred_tool", "proton_experimental")
-                    self.status_label.setText(f"Configuring Proton ({pref_tool}) for Steam...")
-                    ok = force_proton_for_app(aid_str, tool_name=pref_tool, restart_steam_if_running=True)
-                    if not ok:
-                        logger.error(f"[FetchManifest] Failed to configure Proton for AppID {aid_str}")
+                if m_act in (ACTION_PROCEED, ACTION_FORCE_PROTON):
+                    # Proceed normally without forcing Proton or restarting Steam
+                    pass
                 elif m_act == ACTION_ASSELLA_DOWNLOAD:
                     self.status_label.setText("Switching to ASSella downloader...")
                     self._start_assella_flow(aid_str)
