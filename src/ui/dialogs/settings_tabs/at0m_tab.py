@@ -6,7 +6,9 @@ from typing import Optional
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter
+from PyQt6.QtSvg import QSvgRenderer
+from ui.assets import GEAR_SVG
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -414,15 +416,39 @@ def create_at0m_tab(dialog) -> QWidget:
     extras_row.setContentsMargins(0, 2, 0, 4)
     extras_row.setSpacing(8)
 
-    # 4. Lobster button
+    # 4. Lobster button + config gear button
+    lobster_box = QHBoxLayout()
+    lobster_box.setContentsMargins(0, 0, 0, 0)
+    lobster_box.setSpacing(2)
+
     dialog.btn_lobster_plugin = QPushButton("Lobster")
     dialog.btn_lobster_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
-    extras_row.addWidget(dialog.btn_lobster_plugin, 1)
+    lobster_box.addWidget(dialog.btn_lobster_plugin, 1)
 
-    # 5. Hubcap button
+    dialog.btn_lobster_config = QPushButton()
+    dialog.btn_lobster_config.setCursor(Qt.CursorShape.PointingHandCursor)
+    dialog.btn_lobster_config.setFixedSize(34, 34)
+    dialog.btn_lobster_config.setToolTip("Configure lobster.conf.lua")
+    lobster_box.addWidget(dialog.btn_lobster_config, 0)
+
+    extras_row.addLayout(lobster_box, 1)
+
+    # 5. Hubcap button + config gear button
+    hubcap_box = QHBoxLayout()
+    hubcap_box.setContentsMargins(0, 0, 0, 0)
+    hubcap_box.setSpacing(2)
+
     dialog.btn_hubcap_plugin = QPushButton("Hubcap")
     dialog.btn_hubcap_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
-    extras_row.addWidget(dialog.btn_hubcap_plugin, 1)
+    hubcap_box.addWidget(dialog.btn_hubcap_plugin, 1)
+
+    dialog.btn_hubcap_config = QPushButton()
+    dialog.btn_hubcap_config.setCursor(Qt.CursorShape.PointingHandCursor)
+    dialog.btn_hubcap_config.setFixedSize(34, 34)
+    dialog.btn_hubcap_config.setToolTip("Configure spacebunny.conf.lua (Hubcap settings)")
+    hubcap_box.addWidget(dialog.btn_hubcap_config, 0)
+
+    extras_row.addLayout(hubcap_box, 1)
 
     deploy_layout.addLayout(extras_row)
 
@@ -623,6 +649,76 @@ def create_at0m_tab(dialog) -> QWidget:
             dialog.btn_spliced_tickets.setToolTip("spliced-tickets.lua is not deployed. Click to download and install.")
             dialog.btn_spliced_tickets.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
+        def _make_gear_icon(color_hex: str) -> QIcon:
+            renderer = QSvgRenderer(GEAR_SVG.encode("utf-8"))
+            pm = QPixmap(16, 16)
+            pm.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pm)
+            renderer.render(painter)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+            painter.fillRect(pm.rect(), QColor(color_hex))
+            painter.end()
+            return QIcon(pm)
+
+        icon_gear_active = _make_gear_icon("#81C784")
+        icon_gear_disabled = _make_gear_icon("#555555")
+
+        STYLE_SPLIT_ACTIVE_LEFT = """
+            QPushButton {
+                background-color: rgba(76, 175, 80, 0.2);
+                color: #81C784;
+                border: 1px solid rgba(129, 199, 132, 0.5);
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+                border-right: none;
+                padding: 7px 12px;
+                font-size: 8.5pt;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: rgba(76, 175, 80, 0.3);
+            }
+        """
+        STYLE_SPLIT_ACTIVE_GEAR = """
+            QPushButton {
+                background-color: rgba(76, 175, 80, 0.2);
+                border: 1px solid rgba(129, 199, 132, 0.5);
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-left: none;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(76, 175, 80, 0.35);
+            }
+        """
+        STYLE_SPLIT_INACTIVE_LEFT = """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+                border-right: none;
+                color: #FFFFFF;
+                padding: 7px 12px;
+                font-size: 8.5pt;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.14);
+            }
+        """
+        STYLE_SPLIT_DISABLED_GEAR = """
+            QPushButton, QPushButton:disabled {
+                background-color: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-left: none;
+                padding: 0px;
+            }
+        """
+
         # 4. Lobster button state & style (toggleable: click active to disable, click inactive to enable)
         lobster_state = get_plugin_state("lobster.lua")
         lobster_desc = "Headcrab config recovery - restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates"
@@ -630,12 +726,20 @@ def create_at0m_tab(dialog) -> QWidget:
         if lobster_state != "missing":
             dialog.btn_lobster_plugin.setText(f"{lob_name} (Active)")
             dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to disable (removes from plugins directory).")
-            dialog.btn_lobster_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
+            dialog.btn_lobster_plugin.setStyleSheet(STYLE_SPLIT_ACTIVE_LEFT)
+            dialog.btn_lobster_config.setEnabled(True)
+            dialog.btn_lobster_config.setIcon(icon_gear_active)
+            dialog.btn_lobster_config.setStyleSheet(STYLE_SPLIT_ACTIVE_GEAR)
+            dialog.btn_lobster_config.setToolTip("Configure lobster.conf.lua")
         else:
             lbl_text = f"{lob_name} (Disabled)" if is_plugin_user_disabled("lobster.lua") else lob_name
             dialog.btn_lobster_plugin.setText(lbl_text)
             dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to enable and deploy.")
-            dialog.btn_lobster_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
+            dialog.btn_lobster_plugin.setStyleSheet(STYLE_SPLIT_INACTIVE_LEFT)
+            dialog.btn_lobster_config.setEnabled(False)
+            dialog.btn_lobster_config.setIcon(icon_gear_disabled)
+            dialog.btn_lobster_config.setStyleSheet(STYLE_SPLIT_DISABLED_GEAR)
+            dialog.btn_lobster_config.setToolTip("Lobster is disabled. Enable Lobster to configure.")
 
         # 5. Hubcap button state & style (toggleable: click active to disable, click inactive to enable)
         hubcap_state = get_plugin_state("hubcap.lua")
@@ -644,12 +748,20 @@ def create_at0m_tab(dialog) -> QWidget:
         if hubcap_state != "missing":
             dialog.btn_hubcap_plugin.setText(f"{hub_name} (Active)")
             dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to disable (removes from plugins directory).")
-            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
+            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_SPLIT_ACTIVE_LEFT)
+            dialog.btn_hubcap_config.setEnabled(True)
+            dialog.btn_hubcap_config.setIcon(icon_gear_active)
+            dialog.btn_hubcap_config.setStyleSheet(STYLE_SPLIT_ACTIVE_GEAR)
+            dialog.btn_hubcap_config.setToolTip("Configure spacebunny.conf.lua (Hubcap settings)")
         else:
             lbl_text = f"{hub_name} (Disabled)" if is_plugin_user_disabled("hubcap.lua") else hub_name
             dialog.btn_hubcap_plugin.setText(lbl_text)
             dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to enable and deploy.")
-            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
+            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_SPLIT_INACTIVE_LEFT)
+            dialog.btn_hubcap_config.setEnabled(False)
+            dialog.btn_hubcap_config.setIcon(icon_gear_disabled)
+            dialog.btn_hubcap_config.setStyleSheet(STYLE_SPLIT_DISABLED_GEAR)
+            dialog.btn_hubcap_config.setToolTip("Hubcap is disabled. Enable Hubcap to configure.")
 
     class DeployWorker(QThread):
         finished_signal = pyqtSignal(bool, bool, str, str, str)
@@ -755,8 +867,28 @@ def create_at0m_tab(dialog) -> QWidget:
     def _on_hubcap_clicked():
         _toggle_extra_plugin("hubcap.lua", "Hubcap", dialog.btn_hubcap_plugin)
 
+    def _on_lobster_config_clicked():
+        from utils.sls_lua_config import get_lobster_conf_path, write_lobster_conf, read_lobster_conf
+        p = get_lobster_conf_path()
+        if not p.is_file():
+            write_lobster_conf(read_lobster_conf())
+        from ui.dialogs.lobster_config_dialog import LobsterConfigDialog
+        dlg = LobsterConfigDialog(dialog, accent_color=dialog.accent_color)
+        dlg.exec()
+
+    def _on_hubcap_config_clicked():
+        from utils.sls_lua_config import get_spacebunny_conf_path, write_spacebunny_conf, read_spacebunny_conf
+        p = get_spacebunny_conf_path()
+        if not p.is_file():
+            write_spacebunny_conf(read_spacebunny_conf())
+        from ui.dialogs.hubcap_config_dialog import HubcapConfigDialog
+        dlg = HubcapConfigDialog(dialog, accent_color=dialog.accent_color)
+        dlg.exec()
+
     dialog.btn_lobster_plugin.clicked.connect(_on_lobster_clicked)
     dialog.btn_hubcap_plugin.clicked.connect(_on_hubcap_clicked)
+    dialog.btn_lobster_config.clicked.connect(_on_lobster_config_clicked)
+    dialog.btn_hubcap_config.clicked.connect(_on_hubcap_config_clicked)
 
     def _update_subwidget_states(enabled: bool):
         if getattr(dialog, "at0m_disable_updates_checkbox", None):

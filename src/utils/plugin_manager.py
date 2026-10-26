@@ -263,8 +263,8 @@ def get_plugin_version(filename: str) -> Optional[str]:
             infosb = get_manifest_plugin_info("spacebunny.lua")
             if infosb and infosb.get("version"):
                 return str(infosb["version"]).strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error checking manifest for {filename} version: {exc}")
 
     # 2. Check deployed plugin file in SLS plugins dirs
     try:
@@ -287,8 +287,8 @@ def get_plugin_version(filename: str) -> Optional[str]:
                         v = extract_plugin_version(alt_p)
                         if v:
                             return v
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error checking deployed plugin {filename} version: {exc}")
 
     # 3. Check persistent cache
     try:
@@ -304,8 +304,8 @@ def get_plugin_version(filename: str) -> Optional[str]:
                     v = extract_plugin_version(alt_c)
                     if v:
                         return v
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error checking cache for {filename} version: {exc}")
 
     # 4. Check bundled fallback
     try:
@@ -314,8 +314,8 @@ def get_plugin_version(filename: str) -> Optional[str]:
             v = extract_plugin_version(bundled)
             if v:
                 return v
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error checking bundled fallback for {filename} version: {exc}")
 
     return None
 
@@ -684,8 +684,8 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
     if is_interceptor:
         try:
             get_settings().setValue("selected_download_plugin", filename)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"[PluginManager] Could not save selected_download_plugin setting: {exc}")
 
     return True, False, f"Successfully deployed {filename} to SLSsteam."
 

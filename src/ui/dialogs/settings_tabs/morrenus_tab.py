@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QApplication,
     QScrollArea,
+    QCheckBox,
 )
 
 from ui.dialogs.settings_tabs.morrenus_stats_widget import MorrenusStatsWidget
@@ -135,13 +136,82 @@ def create_api_key_setting(
     paste_btn = QPushButton("Paste")
     paste_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
+    atom_sync_cb = QCheckBox("AT0-M Sync")
+    atom_sync_cb.setCursor(Qt.CursorShape.PointingHandCursor)
+    atom_sync_cb.setToolTip(
+        "Automatically synchronize Hubcap API key between ASSella and spacebunny.conf.lua based on the newest timestamp."
+    )
+    atom_sync_cb.setStyleSheet("""
+        QCheckBox {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 8.5pt;
+            font-weight: 500;
+            margin-left: 6px;
+        }
+        QCheckBox:disabled {
+            color: rgba(255, 255, 255, 0.35);
+        }
+    """)
+
+    from utils.plugin_manager import get_plugin_state
+    from utils.sls_lua_config import (
+        generate_hubcap_timestamp,
+        get_spacebunny_conf_path,
+        sync_hubcap_api_key,
+    )
+
+    is_sync_on = dialog.settings.value("atom_hubcap_sync_enabled", False, type=bool)
+    atom_sync_cb.setChecked(is_sync_on)
+
+    sb_exists = get_spacebunny_conf_path().is_file()
+    hub_active = (get_plugin_state("hubcap.lua") != "missing")
+    if not hub_active or not sb_exists:
+        atom_sync_cb.setEnabled(False)
+        atom_sync_cb.setToolTip(
+            "AT0-M Sync is disabled. Activate Hubcap plugin and generate spacebunny.conf.lua in Settings -> AT0-M first."
+        )
+    else:
+        atom_sync_cb.setEnabled(True)
+
+    def _on_sync_toggled(checked: bool):
+        dialog.settings.setValue("atom_hubcap_sync_enabled", checked)
+        if checked:
+            synced, msg = sync_hubcap_api_key(dialog.settings)
+            if synced:
+                new_key = dialog.settings.value(setting_key, "", type=str)
+                api_key_input.setText(new_key)
+
+    atom_sync_cb.toggled.connect(_on_sync_toggled)
+
     def _on_paste():
         clip_text = QApplication.clipboard().text()
         if clip_text:
-            api_key_input.setText(clip_text.strip())
+            cleaned = clip_text.strip()
+            api_key_input.setText(cleaned)
+            dialog.settings.setValue(setting_key, cleaned)
+            dialog.settings.setValue("morrenus_api_key_timestamp", str(generate_hubcap_timestamp()))
+            if atom_sync_cb.isChecked() and atom_sync_cb.isEnabled():
+                sync_hubcap_api_key(dialog.settings)
 
     paste_btn.clicked.connect(_on_paste)
     btn_row.addWidget(paste_btn)
+    btn_row.addWidget(atom_sync_cb)
+
+    # Initial sync check on tab creation
+    if is_sync_on and hub_active and sb_exists:
+        synced, msg = sync_hubcap_api_key(dialog.settings)
+        if synced:
+            current_key = dialog.settings.value(setting_key, "", type=str)
+            api_key_input.setText(current_key)
+
+    def _on_key_changed(text: str):
+        cleaned = text.strip()
+        dialog.settings.setValue(setting_key, cleaned)
+        dialog.settings.setValue("morrenus_api_key_timestamp", str(generate_hubcap_timestamp()))
+        if atom_sync_cb.isChecked() and atom_sync_cb.isEnabled():
+            sync_hubcap_api_key(dialog.settings)
+
+    api_key_input.textChanged.connect(_on_key_changed)
 
     btn_row.addStretch()
     layout.addLayout(btn_row)

@@ -1691,7 +1691,7 @@ class FetchManifestDialog(QDialog):
                     return
 
                 selected_depots = depot_dialog.get_selected_depots()
-                selected_dlc_data = depot_dialog.get_selected_dlc_data()
+                selected_dlc_data = depot_dialog.get_selected_dlc_data() if hasattr(depot_dialog, "get_selected_dlc_data") else {}
                 metadata["selected_dlc_appids"] = list(selected_dlc_data.keys())
                 selected_storage = depot_dialog.get_selected_storage()
                 if selected_storage:
