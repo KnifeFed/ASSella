@@ -77,9 +77,23 @@ class ByparrManager:
             return False
 
     @classmethod
+    def is_local_enabled(cls) -> bool:
+        """True if local byparr exists and has not been explicitly disabled by user."""
+        if cls.is_custom_service():
+            return False
+        if not cls.find_byparr_dir():
+            return False
+        try:
+            return get_settings().value("byparr_enabled", True, type=bool)
+        except Exception:
+            return True
+
+    @classmethod
     def is_available(cls) -> bool:
-        """True if either a custom byparr URL is configured or local byparr directory exists."""
-        return cls.is_custom_service() or (cls.find_byparr_dir() is not None)
+        """True if custom byparr URL is configured, or local byparr is installed and enabled."""
+        if cls.is_custom_service():
+            return True
+        return cls.is_local_enabled()
 
     @classmethod
     def is_running(cls) -> bool:
@@ -170,6 +184,10 @@ class ByparrManager:
 
         if cls.is_custom_service():
             return cls.is_running()
+
+        if not cls.is_local_enabled():
+            logger.info("[SteamDB] Local Byparr is disabled by user.")
+            return False
 
         if cls.is_running():
             return True

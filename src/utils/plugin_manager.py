@@ -335,8 +335,8 @@ def are_all_plugins_installed(ignore_bypass: bool = False) -> bool:
 
     active_interceptor = (
         get_active_interceptor_filename()
-        or get_settings().value("selected_download_plugin", "spacebunny1.5.lua")
-        or "spacebunny1.5.lua"
+        or get_settings().value("selected_download_plugin", "")
+        or get_default_interceptor_from_manifest()
     )
     if not is_plugin_installed_and_valid(active_interceptor):
         return False
@@ -424,6 +424,8 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
     # spliced-tickets.lua requires SmartTickets: 0x1 (SteamDRM) in SLS config
     if filename == "spliced-tickets.lua":
         ensure_smart_tickets_enabled()
+
+    set_plugin_user_disabled(filename, False)
 
     if only_if_missing:
         status = get_plugin_status(filename)
@@ -567,20 +569,89 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
         except Exception:
             pass
 
-    if all_matched and not any_deployed:
-        return True, True, f"{filename} is already up to date (SHA-256 matched)."
-
     return True, False, f"Successfully deployed {filename} to SLSsteam."
 
 
+def undeploy_plugin(filename: str) -> Tuple[bool, str]:
+    """Remove a plugin and its .bak backup from all SLSsteam plugin directories.
+    Also records the plugin as user-disabled in settings so startup does not auto-redeploy it.
+    """
+    set_plugin_user_disabled(filename, True)
+    target_dirs = get_sls_plugins_dirs()
+    if not target_dirs:
+        return False, "No valid SLSsteam plugin directories found."
+
+    errors = []
+    for tdir in target_dirs:
+        try:
+            target_file = tdir / filename
+            if target_file.is_file():
+                target_file.unlink()
+                logger.info(f"[PluginManager] Removed plugin {target_file}")
+            bak_file = tdir / f"{filename}.bak"
+            if bak_file.is_file():
+                bak_file.unlink()
+                logger.info(f"[PluginManager] Removed backup plugin {bak_file}")
+        except Exception as exc:
+            errors.append(f"{tdir}: {exc}")
+
+    if errors:
+        return False, f"Errors undeploying {filename}: {'; '.join(errors)}"
+    return True, f"Successfully removed {filename}."
+
+
+def is_plugin_user_disabled(filename: str) -> bool:
+    """Check if the user has explicitly disabled this plugin in settings."""
+    try:
+        disabled_list = get_settings().value("disabled_plugins", [], type=list)
+        return filename in (disabled_list or [])
+    except Exception:
+        return False
+
+
+def set_plugin_user_disabled(filename: str, disabled: bool) -> None:
+    """Record whether a plugin has been explicitly disabled by user."""
+    try:
+        settings = get_settings()
+        disabled_list = list(settings.value("disabled_plugins", [], type=list) or [])
+        if disabled and filename not in disabled_list:
+            disabled_list.append(filename)
+        elif not disabled and filename in disabled_list:
+            disabled_list = [f for f in disabled_list if f != filename]
+        settings.setValue("disabled_plugins", disabled_list)
+        settings.sync()
+    except Exception as exc:
+        logger.warning(f"[PluginManager] Could not update disabled_plugins setting: {exc}")
+
+
+def get_default_interceptor_from_manifest() -> str:
+    """Determine the default download interceptor from R2 manifest (or cached manifest).
+    Falls back to 'spacebunny1.5.lua' if manifest cannot be read or doesn't specify.
+    """
+    try:
+        manifest = fetch_plugins_manifest()
+        if manifest:
+            if manifest.get("default_interceptor"):
+                return str(manifest["default_interceptor"]).strip()
+
+            plugins = manifest.get("plugins", {})
+            for fname, pdata in plugins.items():
+                if isinstance(pdata, dict) and pdata.get("category") == "interceptor":
+                    if pdata.get("is_default") or pdata.get("default") or pdata.get("required"):
+                        return fname
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error resolving default interceptor from manifest: {exc}")
+    return "spacebunny1.5.lua"
+
+
 def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = False) -> Tuple[bool, List[str]]:
-    """Deploy the selected download interceptor, spliced-tickets, and lobster (if AT0-M enabled and missing)."""
+    """Deploy the selected download interceptor, spliced-tickets, and extras (if AT0-M enabled and not disabled)."""
     ensure_sls_plugin_config_sections()
 
     active_interceptor = (
         get_active_interceptor_filename()
-        or get_settings().value("selected_download_plugin", "spacebunny1.5.lua")
-        or "spacebunny1.5.lua"
+        or get_settings().value("selected_download_plugin", "")
+        or get_default_interceptor_from_manifest()
     )
 
     plugin_list = [active_interceptor, "spliced-tickets.lua"]
@@ -593,35 +664,40 @@ def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = Fal
         if not ok:
             overall_ok = False
 
-    # Lobster autodeployment: only if AT0-M enabled and lobster is not already present
+    # Extras autodeployment: only if AT0-M enabled and plugin is not user-disabled
     try:
         from utils.yaml_config_manager import is_at0m_enabled
         if is_at0m_enabled():
-            status = get_plugin_status("lobster.lua")
-            if status == "missing":
-                ok, skipped, msg = deploy_plugin("lobster.lua", force_download=force_download, only_if_missing=True)
-                results.append(msg)
-                if not ok:
-                    overall_ok = False
-            else:
-                logger.debug("[PluginManager] lobster.lua already present, preserving local version.")
+            for extra_plugin in ("lobster.lua", "hubcap.lua"):
+                if is_plugin_user_disabled(extra_plugin):
+                    logger.debug(f"[PluginManager] {extra_plugin} disabled by user, skipping deployment.")
+                    continue
+                status = get_plugin_status(extra_plugin)
+                if status == "missing":
+                    ok, skipped, msg = deploy_plugin(extra_plugin, force_download=force_download, only_if_missing=True)
+                    results.append(msg)
+                    if not ok:
+                        overall_ok = False
+                else:
+                    logger.debug(f"[PluginManager] {extra_plugin} already present, preserving local version.")
         else:
-            logger.debug("[PluginManager] AT0-M disabled, skipping lobster deployment.")
+            logger.debug("[PluginManager] AT0-M disabled, skipping extras deployment.")
     except Exception as e:
-        logger.warning(f"[PluginManager] Error checking lobster autodeploy in deploy_all_plugins: {e}")
+        logger.warning(f"[PluginManager] Error checking extras autodeploy in deploy_all_plugins: {e}")
 
     return overall_ok, results
 
 
 def autodeploy_lobster_if_needed() -> bool:
-    """Auto-deploy lobster.lua only if AT0-M mode is enabled and lobster.lua is missing in SLS plugins dir.
-    If lobster.lua already exists, it is ignored/preserved.
-    If AT0-M is disabled, it is ignored.
-    """
+    """Auto-deploy lobster.lua only if AT0-M mode is enabled, not user-disabled, and lobster.lua is missing."""
     try:
         from utils.yaml_config_manager import is_at0m_enabled
         if not is_at0m_enabled():
             logger.debug("[PluginManager] AT0-M mode is disabled, skipping lobster autodeploy.")
+            return False
+
+        if is_plugin_user_disabled("lobster.lua"):
+            logger.debug("[PluginManager] lobster.lua disabled by user, skipping autodeploy.")
             return False
 
         status = get_plugin_status("lobster.lua")
@@ -641,8 +717,31 @@ def autodeploy_lobster_if_needed() -> bool:
         return False
 
 
+def autodeploy_hubcap_if_needed() -> bool:
+    """Auto-deploy hubcap.lua if AT0-M mode is enabled, not user-disabled, and hubcap.lua is missing."""
+    try:
+        from utils.yaml_config_manager import is_at0m_enabled
+        if not is_at0m_enabled():
+            return False
+
+        if is_plugin_user_disabled("hubcap.lua"):
+            return False
+
+        status = get_plugin_status("hubcap.lua")
+        if status != "missing":
+            return False
+
+        logger.info("[PluginManager] AT0-M enabled and hubcap.lua missing. Autodeploying hubcap.lua...")
+        ok, skipped, msg = deploy_plugin("hubcap.lua", only_if_missing=True)
+        return ok
+    except Exception as exc:
+        logger.warning(f"[PluginManager] Exception during autodeploy_hubcap_if_needed: {exc}")
+        return False
+
+
 def sync_plugins_if_enabled() -> bool:
     """Startup auto-sync disabled to prevent destructive overwriting of custom plugins."""
     logger.debug("[PluginManager] Startup plugin auto-sync is disabled to preserve custom user plugins.")
     return True
+
 

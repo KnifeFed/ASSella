@@ -1743,7 +1743,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "steamdb_container") and hasattr(self, "steamdb_status_value"):
             try:
                 from core.steamdb_scraper import ByparrManager
-                has_byparr = ByparrManager.find_byparr_dir() is not None
+                has_byparr = ByparrManager.is_available()
                 if not has_byparr:
                     self.steamdb_container.setVisible(False)
                 else:
@@ -1852,7 +1852,7 @@ class MainWindow(QMainWindow):
 
         try:
             from core.steamdb_scraper import ByparrManager
-            if not ByparrManager.find_byparr_dir():
+            if not ByparrManager.is_available():
                 if hasattr(self, "steamdb_container"):
                     self.steamdb_container.setVisible(False)
                 return
@@ -1868,7 +1868,7 @@ class MainWindow(QMainWindow):
         def _worker():
             try:
                 from core.steamdb_scraper import ByparrManager
-                if not ByparrManager.find_byparr_dir():
+                if not ByparrManager.is_available():
                     self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(False))
                     return
                 ok = ByparrManager.verify_steamdb_bypass(timeout_seconds=30)
@@ -1889,7 +1889,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "steamdb_container") and hasattr(self, "steamdb_status_value"):
             try:
                 from core.steamdb_scraper import ByparrManager
-                has_byparr = ByparrManager.find_byparr_dir() is not None
+                has_byparr = ByparrManager.is_available()
             except Exception:
                 has_byparr = False
 

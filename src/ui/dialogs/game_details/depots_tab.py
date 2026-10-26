@@ -304,8 +304,8 @@ def _set_table_height(tbl: QTableWidget, row_count: int) -> None:
     tbl.setFixedHeight(total_h)
 
 
-def _make_bulk_toggle_bar(category_name: str, on_toggle_cb) -> Tuple[QFrame, MiniSwitchToggle, QPushButton, QPushButton]:
-    """Create a sleek footer bar with a Select All / None switch and quick buttons for categories with >5 items."""
+def _make_bulk_toggle_bar(category_name: str, on_toggle_cb) -> Tuple[QFrame, MiniSwitchToggle]:
+    """Create a sleek footer bar with a Select All / None switch for categories with >=5 items."""
     bar = QFrame()
     bar.setStyleSheet("background: transparent; border: none;")
     lay = QHBoxLayout(bar)
@@ -321,62 +321,7 @@ def _make_bulk_toggle_bar(category_name: str, on_toggle_cb) -> Tuple[QFrame, Min
     lay.addWidget(toggle)
 
     lay.addStretch()
-
-    btn_all = QPushButton("All")
-    btn_all.setFixedSize(38, 22)
-    btn_all.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(255, 255, 255, 0.08);
-            color: rgba(255, 255, 255, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
-            font-size: 8pt;
-            font-weight: 500;
-        }
-        QPushButton:hover {
-            background-color: rgba(255, 255, 255, 0.15);
-            color: #FFFFFF;
-        }
-        QPushButton:disabled {
-            background-color: rgba(255, 255, 255, 0.03);
-            color: rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.05);
-        }
-    """)
-
-    btn_none = QPushButton("None")
-    btn_none.setFixedSize(44, 22)
-    btn_none.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(255, 255, 255, 0.08);
-            color: rgba(255, 255, 255, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
-            font-size: 8pt;
-            font-weight: 500;
-        }
-        QPushButton:hover {
-            background-color: rgba(255, 255, 255, 0.15);
-            color: #FFFFFF;
-        }
-        QPushButton:disabled {
-            background-color: rgba(255, 255, 255, 0.03);
-            color: rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.05);
-        }
-    """)
-
-    def _do_toggle(val: bool):
-        toggle.setChecked(val)
-        on_toggle_cb(val)
-
-    btn_all.clicked.connect(lambda: _do_toggle(True))
-    btn_none.clicked.connect(lambda: _do_toggle(False))
-
-    lay.addWidget(btn_all)
-    lay.addWidget(btn_none)
-
-    return bar, toggle, btn_all, btn_none
+    return bar, toggle
 
 
 def init_depots_tab(dialog) -> None:
@@ -418,7 +363,7 @@ def init_depots_tab(dialog) -> None:
     apps_table.setColumnWidth(2, 75)
     layout.addWidget(apps_table)
 
-    apps_bulk_bar, apps_bulk_toggle, apps_btn_all, apps_btn_none = _make_bulk_toggle_bar(
+    apps_bulk_bar, apps_bulk_toggle = _make_bulk_toggle_bar(
         "AppIDs", lambda chk: _on_bulk_toggle_apps(chk)
     )
     layout.addWidget(apps_bulk_bar)
@@ -433,7 +378,7 @@ def init_depots_tab(dialog) -> None:
     depots_table.setColumnWidth(2, 75)
     layout.addWidget(depots_table)
 
-    depots_bulk_bar, depots_bulk_toggle, depots_btn_all, depots_btn_none = _make_bulk_toggle_bar(
+    depots_bulk_bar, depots_bulk_toggle = _make_bulk_toggle_bar(
         "Depots", lambda chk: _on_bulk_toggle_depots(chk)
     )
     layout.addWidget(depots_bulk_bar)
@@ -450,10 +395,11 @@ def init_depots_tab(dialog) -> None:
     keys_table.setColumnWidth(3, 75)
     layout.addWidget(keys_table)
 
-    keys_bulk_bar, keys_bulk_toggle, keys_btn_all, keys_btn_none = _make_bulk_toggle_bar(
+    keys_bulk_bar, keys_bulk_toggle = _make_bulk_toggle_bar(
         "Keys", lambda chk: _on_bulk_toggle_keys(chk)
     )
     layout.addWidget(keys_bulk_bar)
+
 
     # Status Label
     status_lbl = QLabel("")
@@ -1368,8 +1314,6 @@ def init_depots_tab(dialog) -> None:
         # Bulk Select All/None for AdditionalApps (>=5 items)
         apps_bulk_bar.setVisible(len(apps) >= 5)
         apps_bulk_toggle.setReadOnly(not is_unlocked)
-        apps_btn_all.setEnabled(is_unlocked)
-        apps_btn_none.setEnabled(is_unlocked)
 
         # 2. Populate AdditionalDepots Table
         depots = state["depots"]
@@ -1452,8 +1396,6 @@ def init_depots_tab(dialog) -> None:
         # Bulk Select All/None for AdditionalDepots (>=5 items)
         depots_bulk_bar.setVisible(len(depots) >= 5)
         depots_bulk_toggle.setReadOnly(not is_unlocked)
-        depots_btn_all.setEnabled(is_unlocked)
-        depots_btn_none.setEnabled(is_unlocked)
 
         # 3. Populate DecryptionKeys Table
         keys = state["keys"]
@@ -1544,8 +1486,6 @@ def init_depots_tab(dialog) -> None:
         # Bulk Select All/None for DecryptionKeys (>=5 items)
         keys_bulk_bar.setVisible(len(keys) >= 5)
         keys_bulk_toggle.setReadOnly(not is_unlocked)
-        keys_btn_all.setEnabled(is_unlocked)
-        keys_btn_none.setEnabled(is_unlocked)
 
         _update_sync_button_label(state)
         _update_bulk_states(state)

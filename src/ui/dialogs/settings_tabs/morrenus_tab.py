@@ -213,13 +213,6 @@ def create_morrenus_tab(dialog) -> QWidget:
     byparr_desc.setStyleSheet("color: rgba(255, 255, 255, 0.65); font-size: 8.5pt; line-height: 1.3;")
     byparr_layout.addWidget(byparr_desc)
 
-    byparr_enable_cb = QCheckBox("Enable Byparr / SteamDB Integration")
-    is_scraping_disabled = dialog.settings.value("disable_steamdb_scraping", False, type=bool)
-    byparr_enable_cb.setChecked(not is_scraping_disabled)
-    byparr_enable_cb.setCursor(Qt.CursorShape.PointingHandCursor)
-    byparr_enable_cb.setStyleSheet("color: #FFFFFF; font-size: 8.5pt; font-weight: 500;")
-    byparr_layout.addWidget(byparr_enable_cb)
-
     status_row = QHBoxLayout()
     status_row.setSpacing(8)
     status_tag = QLabel("Status:")
@@ -231,41 +224,13 @@ def create_morrenus_tab(dialog) -> QWidget:
     status_row.addStretch()
     byparr_layout.addLayout(status_row)
 
-    def _update_byparr_status():
-        enabled = byparr_enable_cb.isChecked()
-        if not enabled:
-            byparr_status_badge.setText("Disabled in Settings")
-            byparr_status_badge.setStyleSheet("color: rgba(255, 255, 255, 0.45); font-size: 8.5pt; font-weight: bold;")
-        elif ByparrManager.is_custom_service():
-            url = ByparrManager.get_service_url()
-            running = ByparrManager.is_running()
-            stat_text = "Online" if running else "Configured"
-            color = "#81C784" if running else "#FFB74D"
-            byparr_status_badge.setText(f"Custom Bypasser ({stat_text}: {url})")
-            byparr_status_badge.setStyleSheet(f"color: {color}; font-size: 8.5pt; font-weight: bold;")
-        elif ByparrManager.find_byparr_dir():
-            running = ByparrManager.is_running()
-            stat_text = "Online" if running else "Ready on Demand"
-            byparr_status_badge.setText(f"Local Managed ({stat_text})")
-            byparr_status_badge.setStyleSheet("color: #81C784; font-size: 8.5pt; font-weight: bold;")
-        else:
-            byparr_status_badge.setText("Not Configured / Missing")
-            byparr_status_badge.setStyleSheet("color: #FFB74D; font-size: 8.5pt; font-weight: bold;")
-
-    def _on_byparr_toggled(checked: bool):
-        dialog.settings.setValue("disable_steamdb_scraping", not checked)
-        _update_byparr_status()
-
-    byparr_enable_cb.toggled.connect(_on_byparr_toggled)
-    _update_byparr_status()
-
-    # Buttons Row
+    # 2 Buttons Row
     byparr_btn_row = QHBoxLayout()
     byparr_btn_row.setSpacing(8)
 
-    btn_setup_local = QPushButton("⚡ Setup Local Byparr")
-    btn_setup_local.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn_setup_local.setStyleSheet("""
+    btn_toggle_local = QPushButton("Enable Byparr")
+    btn_toggle_local.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn_toggle_local.setStyleSheet("""
         QPushButton {
             background-color: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.18);
@@ -281,20 +246,7 @@ def create_morrenus_tab(dialog) -> QWidget:
         }
     """)
 
-    def _on_setup_local():
-        try:
-            from managers.cli_manager import open_cli_terminal
-            open_cli_terminal(
-                "curl -sSL https://raw.githubusercontent.com/niwia/ASSella/beta/scripts/setup_byparr.sh | bash; "
-                "echo ''; echo 'Setup finished. Press Enter to close...'; read _"
-            )
-        except Exception as _ex:
-            logger.warning(f"Could not launch local byparr setup: {_ex}")
-
-    btn_setup_local.clicked.connect(_on_setup_local)
-    byparr_btn_row.addWidget(btn_setup_local)
-
-    btn_configure_custom = QPushButton("🌐 Configure Custom Bypasser")
+    btn_configure_custom = QPushButton("Configure Custom Bypasser")
     btn_configure_custom.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_configure_custom.setStyleSheet("""
         QPushButton {
@@ -312,19 +264,81 @@ def create_morrenus_tab(dialog) -> QWidget:
         }
     """)
 
+    def _update_byparr_ui():
+        if ByparrManager.is_custom_service():
+            url = ByparrManager.get_service_url()
+            running = ByparrManager.is_running()
+            stat_text = "Online" if running else "Configured"
+            color = "#81C784" if running else "#FFB74D"
+            byparr_status_badge.setText(f"Custom Bypasser ({stat_text}: {url})")
+            byparr_status_badge.setStyleSheet(f"color: {color}; font-size: 8.5pt; font-weight: bold;")
+            btn_toggle_local.setText("Enable Byparr")
+        elif ByparrManager.find_byparr_dir():
+            if ByparrManager.is_local_enabled():
+                running = ByparrManager.is_running()
+                stat_text = "Online" if running else "Ready on Demand"
+                byparr_status_badge.setText(f"Local Managed ({stat_text})")
+                byparr_status_badge.setStyleSheet("color: #81C784; font-size: 8.5pt; font-weight: bold;")
+                btn_toggle_local.setText("Disable Byparr")
+            else:
+                byparr_status_badge.setText("Local Managed (Disabled)")
+                byparr_status_badge.setStyleSheet("color: rgba(255, 255, 255, 0.45); font-size: 8.5pt; font-weight: bold;")
+                btn_toggle_local.setText("Enable Byparr")
+        else:
+            byparr_status_badge.setText("Not Configured / Missing")
+            byparr_status_badge.setStyleSheet("color: #FFB74D; font-size: 8.5pt; font-weight: bold;")
+            btn_toggle_local.setText("Enable Byparr")
+
+    def _on_toggle_local():
+        if not ByparrManager.find_byparr_dir():
+            # Not deployed -> launch setup script
+            try:
+                from managers.cli_manager import open_cli_terminal
+                dialog.settings.setValue("byparr_enabled", True)
+                dialog.settings.setValue("disable_steamdb_scraping", False)
+                open_cli_terminal(
+                    "curl -sSL https://raw.githubusercontent.com/niwia/ASSella/beta/scripts/setup_byparr.sh | bash; "
+                    "echo ''; echo 'Setup finished. Press Enter to close...'; read _"
+                )
+            except Exception as _ex:
+                logger.warning(f"Could not launch local byparr setup: {_ex}")
+        else:
+            if ByparrManager.is_local_enabled():
+                # Currently enabled -> disable it and stop process
+                dialog.settings.setValue("byparr_enabled", False)
+                ByparrManager.stop()
+                logger.info("[ByparrConfig] Local Byparr disabled and stopped.")
+            else:
+                # Currently disabled -> enable it (mutual exclusion: clears custom URL)
+                dialog.settings.setValue("byparr_url", "")
+                dialog.settings.setValue("byparr_auth_header", "")
+                dialog.settings.setValue("byparr_enabled", True)
+                dialog.settings.setValue("disable_steamdb_scraping", False)
+                logger.info("[ByparrConfig] Local Byparr enabled (custom URL cleared).")
+                import threading
+                threading.Thread(target=ByparrManager.ensure_running, daemon=True).start()
+
+        _update_byparr_ui()
+        if hasattr(dialog, "main_window") and hasattr(dialog.main_window, "check_steamdb_status"):
+            dialog.main_window.check_steamdb_status()
+
     def _on_configure_custom():
         from ui.dialogs.custom_byparr_dialog import CustomByparrDialog
         dlg = CustomByparrDialog(dialog, accent_color=dialog.accent_color)
         if dlg.exec():
-            byparr_enable_cb.setChecked(True)
-            _update_byparr_status()
+            _update_byparr_ui()
+            if hasattr(dialog, "main_window") and hasattr(dialog.main_window, "check_steamdb_status"):
+                dialog.main_window.check_steamdb_status()
 
+    btn_toggle_local.clicked.connect(_on_toggle_local)
     btn_configure_custom.clicked.connect(_on_configure_custom)
-    byparr_btn_row.addWidget(btn_configure_custom)
 
+    byparr_btn_row.addWidget(btn_toggle_local)
+    byparr_btn_row.addWidget(btn_configure_custom)
     byparr_btn_row.addStretch()
     byparr_layout.addLayout(byparr_btn_row)
 
+    _update_byparr_ui()
     layout.addWidget(byparr_card)
 
     layout.addStretch()

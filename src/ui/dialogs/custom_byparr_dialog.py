@@ -81,7 +81,7 @@ class CustomByparrDialog(QDialog):
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
 
-        titlebar = DialogTitleBar(self, "Cloudflare Solver Configuration", is_modal=True)
+        titlebar = DialogTitleBar(self, "Cloudflare Solver Configuration", can_minimize=False, can_maximize=False)
         card_layout.addWidget(titlebar)
 
         content = QWidget()
@@ -150,7 +150,7 @@ class CustomByparrDialog(QDialog):
         # Test button & result label
         test_row = QHBoxLayout()
         test_row.setSpacing(10)
-        self.test_btn = QPushButton("⚡ Test & Verify Connection")
+        self.test_btn = QPushButton("Test & Verify Connection")
         self.test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.test_btn.setFixedHeight(28)
         self.test_btn.setStyleSheet("""
@@ -271,12 +271,12 @@ class CustomByparrDialog(QDialog):
 
         def _on_done(ok: bool, msg: str, elapsed: float):
             self.test_btn.setEnabled(True)
-            self.test_btn.setText("⚡ Test & Verify Connection")
+            self.test_btn.setText("Test & Verify Connection")
             if ok:
-                self.result_lbl.setText(f"✓ {msg}")
+                self.result_lbl.setText(f"Success: {msg}")
                 self.result_lbl.setStyleSheet("color: #81C784; font-size: 8pt; font-weight: 600;")
             else:
-                self.result_lbl.setText(f"✗ Verification failed: {msg}")
+                self.result_lbl.setText(f"Verification failed: {msg}")
                 self.result_lbl.setStyleSheet("color: #E57373; font-size: 8pt;")
             self._active_worker = None
 
@@ -296,7 +296,14 @@ class CustomByparrDialog(QDialog):
 
         self.settings.setValue("byparr_url", url)
         self.settings.setValue("byparr_auth_header", auth)
-        # Re-enable scraping in case it was toggled off
         self.settings.setValue("disable_steamdb_scraping", False)
+
+        # Mutual exclusion: when custom service is configured, auto-disable local Byparr
+        is_custom = bool(url and url.rstrip("/") != BYPARR_DEFAULT_URL.rstrip("/"))
+        if is_custom:
+            self.settings.setValue("byparr_enabled", False)
+            ByparrManager.stop()
+            logger.info("[ByparrConfig] Custom service active - local ASSella Byparr disabled.")
+
         logger.info(f"[ByparrConfig] Saved byparr_url={url}, auth_set={bool(auth)}")
         self.accept()

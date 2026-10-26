@@ -155,26 +155,38 @@ class TestAtomDlcAndByparr(unittest.TestCase):
                 manifest_data=manifest_data,
             )
 
-            # 1. Base appid (123456) and owned DLC (100001) MUST NOT be in apps table
+            # 1. Base appid (123456) MUST NOT be in apps table, while owned DLC (100001) is present but greyscaled
             app_ids_in_table = [dlg.apps_table.item(r, 0).text() for r in range(dlg.apps_table.rowCount())]
             self.assertNotIn("123456", app_ids_in_table)
-            self.assertNotIn("100001", app_ids_in_table)
+            self.assertIn("100001", app_ids_in_table)
             self.assertIn("100002", app_ids_in_table)
             self.assertIn("100003", app_ids_in_table)
-            self.assertEqual(len(app_ids_in_table), 2)
+            self.assertEqual(len(app_ids_in_table), 3)
 
-            # 2. Bulk bar should be hidden because count is < 5 (2 items)
+            # Owned DLC 100001 toggle must be disabled/read-only
+            toggle_100001 = dlg.app_toggles["100001"]
+            self.assertFalse(toggle_100001.isEnabled())
+
+            # Unowned DLC 100002 & 100003 must be enabled
+            toggle_100002 = dlg.app_toggles["100002"]
+            self.assertTrue(toggle_100002.isEnabled())
+
+            # 2. Bulk bar should be hidden because count is < 5 (3 items)
             self.assertFalse(dlg.apps_bulk_bar.isVisible())
 
-            # 3. Depots: 200001 belongs to owned DLC 100001 -> must be omitted
+            # 3. Depots: 200001 belongs to owned DLC 100001 -> greyscaled with locked toggle
             # 200002 is missing key -> disabled with tag '[No Key]'
             # 200003 is valid -> enabled
             depot_ids_in_table = [dlg.depots_table.item(r, 0).text() for r in range(dlg.depots_table.rowCount())]
-            self.assertNotIn("200001", depot_ids_in_table)
+            self.assertIn("200001", depot_ids_in_table)
             self.assertIn("200002", depot_ids_in_table)
             self.assertIn("200003", depot_ids_in_table)
 
-            # 200002 toggle should be disabled
+            # 200001 owned depot toggle should be disabled/locked
+            toggle_200001 = dlg.depot_toggles["200001"]
+            self.assertFalse(toggle_200001.isEnabled())
+
+            # 200002 toggle should be disabled (missing key)
             toggle_200002 = dlg.depot_toggles["200002"]
             self.assertFalse(toggle_200002.isEnabled())
 
@@ -183,7 +195,7 @@ class TestAtomDlcAndByparr(unittest.TestCase):
             self.assertTrue(toggle_200003.isEnabled())
             self.assertTrue(toggle_200003.isChecked())
 
-            print("  [PASS] AtomDlcSelectionDialog structure, owned DLC filtering, and toggle state verified")
+            print("  [PASS] AtomDlcSelectionDialog structure, owned DLC greyscaling, and toggle state verified")
 
     def test_04_dlc_mode_memory_detection(self):
         """Verify _detect_configured_dlc_mode detects AT0-M vs ASSella vs unconfigured."""

@@ -155,7 +155,7 @@ def init_builds_tab(dialog) -> None:
         }
     """
 
-    btn_install_byparr = QPushButton("⚡ Install ASSella Byparr")
+    btn_install_byparr = QPushButton("Install ASSella Byparr")
     btn_install_byparr.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_install_byparr.setStyleSheet(download_style)
 
@@ -172,7 +172,7 @@ def init_builds_tab(dialog) -> None:
     btn_install_byparr.clicked.connect(_on_install_byparr_clicked)
     setup_btn_row.addWidget(btn_install_byparr)
 
-    btn_custom_byparr = QPushButton("🌐 Connect Existing Bypasser")
+    btn_custom_byparr = QPushButton("Connect Existing Bypasser")
     btn_custom_byparr.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_custom_byparr.setStyleSheet(secondary_style)
 

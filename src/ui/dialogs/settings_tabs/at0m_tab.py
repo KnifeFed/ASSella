@@ -121,9 +121,17 @@ def get_active_download_plugin() -> Optional[str]:
 
 def get_available_download_plugins() -> list[tuple[str, str]]:
     """Return available download plugins as list of (display_name, filename)."""
+    try:
+        from utils.plugin_manager import get_default_interceptor_from_manifest
+        def_interceptor = get_default_interceptor_from_manifest()
+    except Exception:
+        def_interceptor = "spacebunny1.5.lua"
+
+    sb_label = "SpaceBunny 1.5 (Default)" if def_interceptor == "spacebunny1.5.lua" else "SpaceBunny 1.5"
+    std_label = "Standard (download.lua) (Default)" if def_interceptor == "download.lua" else "Standard (download.lua)"
     options = [
-        ("SpaceBunny 1.5 (Default)", "spacebunny1.5.lua"),
-        ("Standard (download.lua)", "download.lua"),
+        (sb_label, "spacebunny1.5.lua"),
+        (std_label, "download.lua"),
     ]
     try:
         from utils.helpers import get_base_path
@@ -254,46 +262,6 @@ def create_at0m_tab(dialog) -> QWidget:
     act_row.addWidget(dialog.at0m_download_action_combo)
     cfg_layout.addLayout(act_row)
 
-    # Option 2b: Default DLC-Only Behavior
-    dlc_act_row = QHBoxLayout()
-    dlc_act_row.setContentsMargins(2, 2, 2, 2)
-    dlc_act_row.setSpacing(10)
-
-    dlc_act_title = QLabel("Default DLC-Only Behavior")
-    dlc_act_title.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 9pt;")
-    dlc_act_row.addWidget(dlc_act_title, stretch=1)
-
-    dialog.at0m_dlc_action_combo = QComboBox()
-    dialog.at0m_dlc_action_combo.setCursor(Qt.CursorShape.PointingHandCursor)
-    dialog.at0m_dlc_action_combo.setFixedWidth(155)
-    dialog.at0m_dlc_action_combo.addItem("Always ask", "ask")
-    dialog.at0m_dlc_action_combo.addItem("Start Native (at0-m)", "native")
-    dialog.at0m_dlc_action_combo.addItem("Start ASSella", "assella")
-
-    saved_dlc_behavior = dialog.settings.value(
-        "at0m_default_dlc_action",
-        "ask",
-        type=str,
-    )
-    cur_dlc_idx = dialog.at0m_dlc_action_combo.findData(saved_dlc_behavior)
-    if cur_dlc_idx >= 0:
-        dialog.at0m_dlc_action_combo.setCurrentIndex(cur_dlc_idx)
-
-    dialog.at0m_dlc_action_combo.currentIndexChanged.connect(
-        lambda _i: dialog.settings.setValue(
-            "at0m_default_dlc_action",
-            dialog.at0m_dlc_action_combo.currentData(),
-        )
-    )
-    dlc_act_row.addWidget(dialog.at0m_dlc_action_combo)
-    cfg_layout.addLayout(dlc_act_row)
-
-    # Separator
-    sep2 = QFrame()
-    sep2.setFrameShape(QFrame.Shape.HLine)
-    sep2.setStyleSheet("color: rgba(255,255,255,0.08); border: none; background: rgba(255,255,255,0.08); max-height: 1px;")
-    cfg_layout.addWidget(sep2)
-
     # Option 3: Start download with Steam
     start_row = QHBoxLayout()
     start_row.setContentsMargins(2, 2, 2, 2)
@@ -346,10 +314,54 @@ def create_at0m_tab(dialog) -> QWidget:
                 "vapor_start_download_immediately",
                 dialog.at0m_start_mode_combo.currentData() == "immediate",
             ),
+            dialog.settings.sync(),
         )
     )
     start_row.addWidget(dialog.at0m_start_mode_combo)
     cfg_layout.addLayout(start_row)
+
+    # Separator
+    sep2 = QFrame()
+    sep2.setFrameShape(QFrame.Shape.HLine)
+    sep2.setStyleSheet("color: rgba(255,255,255,0.08); border: none; background: rgba(255,255,255,0.08); max-height: 1px;")
+    cfg_layout.addWidget(sep2)
+
+    # Option 4: Default DLC-Only Behavior (after separator)
+    dlc_act_row = QHBoxLayout()
+    dlc_act_row.setContentsMargins(2, 2, 2, 2)
+    dlc_act_row.setSpacing(10)
+
+    dlc_act_title = QLabel("Default DLC-Only Behavior")
+    dlc_act_title.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 9pt;")
+    dlc_act_row.addWidget(dlc_act_title, stretch=1)
+
+    dialog.at0m_dlc_action_combo = QComboBox()
+    dialog.at0m_dlc_action_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+    dialog.at0m_dlc_action_combo.setFixedWidth(155)
+    dialog.at0m_dlc_action_combo.addItem("Always ask", "ask")
+    dialog.at0m_dlc_action_combo.addItem("Start Native (at0-m)", "native")
+    dialog.at0m_dlc_action_combo.addItem("Start ASSella", "assella")
+
+    saved_dlc_behavior = dialog.settings.value(
+        "at0m_default_dlc_action",
+        "ask",
+        type=str,
+    )
+    cur_dlc_idx = dialog.at0m_dlc_action_combo.findData(saved_dlc_behavior)
+    if cur_dlc_idx >= 0:
+        dialog.at0m_dlc_action_combo.setCurrentIndex(cur_dlc_idx)
+
+    def _on_dlc_action_changed(_i):
+        dialog.settings.setValue(
+            "at0m_default_dlc_action",
+            dialog.at0m_dlc_action_combo.currentData(),
+        )
+        dialog.settings.sync()
+
+    dialog.at0m_dlc_action_combo.currentIndexChanged.connect(_on_dlc_action_changed)
+    dlc_act_row.addWidget(dialog.at0m_dlc_action_combo)
+    cfg_layout.addLayout(dlc_act_row)
+
 
     layout.addWidget(cfg_card)
 
@@ -381,7 +393,7 @@ def create_at0m_tab(dialog) -> QWidget:
 
     # Extras section
     extras_lbl = QLabel("Extras")
-    extras_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 8.5pt; font-weight: 600; margin-top: 6px;")
+    extras_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 9pt; font-weight: 700; margin-top: 8px;")
     deploy_layout.addWidget(extras_lbl)
 
     extras_row = QHBoxLayout()
@@ -487,6 +499,7 @@ def create_at0m_tab(dialog) -> QWidget:
     """
 
     def _refresh_deploy_ui():
+        from utils.plugin_manager import get_default_interceptor_from_manifest, is_plugin_user_disabled
         is_custom = dialog.settings.value("custom_plugins_advanced", False, type=bool)
         std_state = get_plugin_state("download.lua")
         space_state = get_plugin_state("spacebunny1.5.lua")
@@ -494,35 +507,39 @@ def create_at0m_tab(dialog) -> QWidget:
         active_dl = get_active_download_plugin()
         active_lower = (active_dl or "").lower()
 
+        def_interceptor = get_default_interceptor_from_manifest()
+        sb_base = "SpaceBunny (Default)" if def_interceptor == "spacebunny1.5.lua" else "SpaceBunny"
+        std_base = "Standard (Default)" if def_interceptor == "download.lua" else "Standard"
+
         is_space_active = ("spacebunny" in active_lower) or ("spacetest" in active_lower)
         is_std_active = (active_dl == "download.lua")
 
         if is_custom:
             dialog.btn_standard_plugin.setEnabled(False)
-            dialog.btn_standard_plugin.setText("Standard")
+            dialog.btn_standard_plugin.setText(std_base)
             dialog.btn_standard_plugin.setToolTip("Custom plugins option is enabled. Verification is bypassed.")
             dialog.btn_standard_plugin.setStyleSheet(STYLE_DISABLED)
 
             dialog.btn_spacebunny_plugin.setEnabled(False)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny (Default)")
+            dialog.btn_spacebunny_plugin.setText(sb_base)
             dialog.btn_spacebunny_plugin.setToolTip("Custom plugins option is enabled. Verification is bypassed.")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_DISABLED)
         elif is_std_active:
             # Standard is active
             if std_state == "up_to_date":
                 dialog.btn_standard_plugin.setEnabled(False)
-                dialog.btn_standard_plugin.setText("Standard (Active)")
+                dialog.btn_standard_plugin.setText(f"{std_base} (Active)")
                 dialog.btn_standard_plugin.setToolTip("download.lua is currently active and verified against Cloudflare manifest.")
                 dialog.btn_standard_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
             else:
                 dialog.btn_standard_plugin.setEnabled(True)
-                dialog.btn_standard_plugin.setText("Standard (Update)")
+                dialog.btn_standard_plugin.setText(f"{std_base} (Update)")
                 dialog.btn_standard_plugin.setToolTip("download.lua is active but outdated. Click to update from Cloudflare.")
                 dialog.btn_standard_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             # SpaceBunny is inactive (clickable to switch)
             dialog.btn_spacebunny_plugin.setEnabled(True)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny (Default)")
+            dialog.btn_spacebunny_plugin.setText(sb_base)
             dialog.btn_spacebunny_plugin.setToolTip("Click to activate SpaceBunny 1.5 (archives download.lua to .bak).")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
@@ -530,30 +547,30 @@ def create_at0m_tab(dialog) -> QWidget:
             # SpaceBunny is active
             if space_state == "up_to_date":
                 dialog.btn_spacebunny_plugin.setEnabled(False)
-                dialog.btn_spacebunny_plugin.setText("SpaceBunny (Active)")
+                dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Active)")
                 dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is currently active and verified against Cloudflare manifest.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
             else:
                 dialog.btn_spacebunny_plugin.setEnabled(True)
-                dialog.btn_spacebunny_plugin.setText("SpaceBunny (Update)")
+                dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Update)")
                 dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is active but outdated. Click to update from Cloudflare.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             # Standard is inactive (clickable to switch)
             dialog.btn_standard_plugin.setEnabled(True)
-            dialog.btn_standard_plugin.setText("Standard")
+            dialog.btn_standard_plugin.setText(std_base)
             dialog.btn_standard_plugin.setToolTip("Click to activate Standard download.lua (archives SpaceBunny to .bak).")
             dialog.btn_standard_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
         else:
             # Neither is currently active
             dialog.btn_standard_plugin.setEnabled(True)
-            dialog.btn_standard_plugin.setText("Standard (Missing)")
+            dialog.btn_standard_plugin.setText(f"{std_base} (Missing)")
             dialog.btn_standard_plugin.setToolTip("download.lua is not installed. Click to download and activate.")
             dialog.btn_standard_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             dialog.btn_spacebunny_plugin.setEnabled(True)
-            dialog.btn_spacebunny_plugin.setText("SpaceBunny (Missing)")
+            dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Missing)")
             dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is not installed. Click to download and activate.")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
@@ -570,33 +587,33 @@ def create_at0m_tab(dialog) -> QWidget:
             dialog.btn_spliced_tickets.setToolTip("spliced-tickets.lua is not deployed. Click to download and install.")
             dialog.btn_spliced_tickets.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
-        # 4. Lobster button state & style
+        # 4. Lobster button state & style (toggleable: click active to disable, click inactive to enable)
         lobster_state = get_plugin_state("lobster.lua")
-        if lobster_state == "up_to_date":
-            dialog.btn_lobster_plugin.setEnabled(False)
+        lobster_desc = "Headcrab config recovery - restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates"
+        dialog.btn_lobster_plugin.setEnabled(True)
+        if lobster_state != "missing":
             dialog.btn_lobster_plugin.setText("Lobster (Active)")
-            dialog.btn_lobster_plugin.setToolTip("lobster.lua is deployed and active.")
+            dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to disable (removes from plugins directory).")
             dialog.btn_lobster_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
         else:
-            dialog.btn_lobster_plugin.setEnabled(True)
-            status_txt = "Lobster (Missing)" if lobster_state == "missing" else "Lobster (Update)"
-            dialog.btn_lobster_plugin.setText(status_txt)
-            dialog.btn_lobster_plugin.setToolTip("lobster.lua config recovery plugin is not deployed. Click to install.")
-            dialog.btn_lobster_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
+            lbl_text = "Lobster (Disabled)" if is_plugin_user_disabled("lobster.lua") else "Lobster"
+            dialog.btn_lobster_plugin.setText(lbl_text)
+            dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to enable and deploy.")
+            dialog.btn_lobster_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
-        # 5. Hubcap button state & style
+        # 5. Hubcap button state & style (toggleable: click active to disable, click inactive to enable)
         hubcap_state = get_plugin_state("hubcap.lua")
-        if hubcap_state == "up_to_date":
-            dialog.btn_hubcap_plugin.setEnabled(False)
+        hubcap_desc = "(Optional) Auto fetch depotkey when Steam asks for (experimental)"
+        dialog.btn_hubcap_plugin.setEnabled(True)
+        if hubcap_state != "missing":
             dialog.btn_hubcap_plugin.setText("Hubcap (Active)")
-            dialog.btn_hubcap_plugin.setToolTip("hubcap.lua is deployed and active.")
+            dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to disable (removes from plugins directory).")
             dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
         else:
-            dialog.btn_hubcap_plugin.setEnabled(True)
-            status_txt = "Hubcap (Missing)" if hubcap_state == "missing" else "Hubcap (Update)"
-            dialog.btn_hubcap_plugin.setText(status_txt)
-            dialog.btn_hubcap_plugin.setToolTip("hubcap.lua bridge plugin is not deployed. Click to install.")
-            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
+            lbl_text = "Hubcap (Disabled)" if is_plugin_user_disabled("hubcap.lua") else "Hubcap"
+            dialog.btn_hubcap_plugin.setText(lbl_text)
+            dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to enable and deploy.")
+            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
     class DeployWorker(QThread):
         finished_signal = pyqtSignal(bool, bool, str, str, str)
@@ -639,7 +656,7 @@ def create_at0m_tab(dialog) -> QWidget:
                 ThemedMessageBox.information(
                     dialog,
                     t,
-                    f"Successfully activated {t} ({f})!\nAny alternative interceptor plugins were safely archived as .bak."
+                    f"Successfully activated {t} ({f})!"
                 )
             dialog._active_deploy_worker = None
 
@@ -650,7 +667,7 @@ def create_at0m_tab(dialog) -> QWidget:
         _deploy_single("download.lua", "Standard Plugin", dialog.btn_standard_plugin)
 
     def _on_spacebunny_clicked():
-        _deploy_single("spacebunny1.5.lua", "SpaceBunny (Default)", dialog.btn_spacebunny_plugin)
+        _deploy_single("spacebunny1.5.lua", "SpaceBunny", dialog.btn_spacebunny_plugin)
 
     def _on_spliced_tickets_clicked():
         reply = ThemedMessageBox.warning(
@@ -676,11 +693,28 @@ def create_at0m_tab(dialog) -> QWidget:
     dialog.btn_spacebunny_plugin.clicked.connect(_on_spacebunny_clicked)
     dialog.btn_spliced_tickets.clicked.connect(_on_spliced_tickets_clicked)
 
+    def _toggle_extra_plugin(filename: str, title: str, button: QPushButton):
+        from utils.plugin_manager import get_plugin_status, undeploy_plugin
+        is_active = (get_plugin_state(filename) != "missing")
+        if is_active:
+            ok, msg = undeploy_plugin(filename)
+            _refresh_deploy_ui()
+            if ok:
+                ThemedMessageBox.information(
+                    dialog,
+                    title,
+                    f"Disabled {title} ({filename}).\nThe plugin has been removed and won't auto-deploy."
+                )
+            else:
+                ThemedMessageBox.warning(dialog, title, f"Could not disable {filename}:\n{msg}")
+        else:
+            _deploy_single(filename, title, button)
+
     def _on_lobster_clicked():
-        _deploy_single("lobster.lua", "Lobster Plugin", dialog.btn_lobster_plugin)
+        _toggle_extra_plugin("lobster.lua", "Lobster", dialog.btn_lobster_plugin)
 
     def _on_hubcap_clicked():
-        _deploy_single("hubcap.lua", "Hubcap Plugin", dialog.btn_hubcap_plugin)
+        _toggle_extra_plugin("hubcap.lua", "Hubcap", dialog.btn_hubcap_plugin)
 
     dialog.btn_lobster_plugin.clicked.connect(_on_lobster_clicked)
     dialog.btn_hubcap_plugin.clicked.connect(_on_hubcap_clicked)
@@ -702,9 +736,17 @@ def create_at0m_tab(dialog) -> QWidget:
         if checked:
             from utils.yaml_config_manager import ensure_sls_plugin_config_sections
             ensure_sls_plugin_config_sections(cfg_path)
-            for p_file in ("spacebunny1.5.lua", "spliced-tickets.lua", "lobster.lua", "hubcap.lua"):
+            from utils.plugin_manager import (
+                get_default_interceptor_from_manifest,
+                is_plugin_user_disabled,
+            )
+            def_interceptor = get_default_interceptor_from_manifest()
+            for p_file in (def_interceptor, "spliced-tickets.lua"):
                 if get_plugin_state(p_file) == "missing":
                     deploy_sls_plugin(p_file)
+            for extra in ("lobster.lua", "hubcap.lua"):
+                if not is_plugin_user_disabled(extra) and get_plugin_state(extra) == "missing":
+                    deploy_sls_plugin(extra)
         _refresh_deploy_ui()
         _update_subwidget_states(checked)
 
