@@ -139,7 +139,7 @@ def get_available_download_plugins() -> list[tuple[str, str]]:
                     if (
                         not f.name.endswith(".bak")
                         and not f.name.startswith(".")
-                        and f.name not in ("spliced-tickets.lua", "lobster.lua")
+                        and f.name not in ("spliced-tickets.lua", "lobster.lua", "hubcap.lua")
                         and f.name not in known_filenames
                     ):
                         options.append((f"{f.name}", f.name))
@@ -379,6 +379,27 @@ def create_at0m_tab(dialog) -> QWidget:
 
     deploy_layout.addLayout(buttons_row)
 
+    # Extras section
+    extras_lbl = QLabel("Extras")
+    extras_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 8.5pt; font-weight: 600; margin-top: 6px;")
+    deploy_layout.addWidget(extras_lbl)
+
+    extras_row = QHBoxLayout()
+    extras_row.setContentsMargins(0, 2, 0, 4)
+    extras_row.setSpacing(8)
+
+    # 4. Lobster button
+    dialog.btn_lobster_plugin = QPushButton("Lobster")
+    dialog.btn_lobster_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
+    extras_row.addWidget(dialog.btn_lobster_plugin, 1)
+
+    # 5. Hubcap button
+    dialog.btn_hubcap_plugin = QPushButton("Hubcap")
+    dialog.btn_hubcap_plugin.setCursor(Qt.CursorShape.PointingHandCursor)
+    extras_row.addWidget(dialog.btn_hubcap_plugin, 1)
+
+    deploy_layout.addLayout(extras_row)
+
     # Separator
     deploy_sep = QFrame()
     deploy_sep.setFrameShape(QFrame.Shape.HLine)
@@ -549,6 +570,34 @@ def create_at0m_tab(dialog) -> QWidget:
             dialog.btn_spliced_tickets.setToolTip("spliced-tickets.lua is not deployed. Click to download and install.")
             dialog.btn_spliced_tickets.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
+        # 4. Lobster button state & style
+        lobster_state = get_plugin_state("lobster.lua")
+        if lobster_state == "up_to_date":
+            dialog.btn_lobster_plugin.setEnabled(False)
+            dialog.btn_lobster_plugin.setText("Lobster (Active)")
+            dialog.btn_lobster_plugin.setToolTip("lobster.lua is deployed and active.")
+            dialog.btn_lobster_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
+        else:
+            dialog.btn_lobster_plugin.setEnabled(True)
+            status_txt = "Lobster (Missing)" if lobster_state == "missing" else "Lobster (Update)"
+            dialog.btn_lobster_plugin.setText(status_txt)
+            dialog.btn_lobster_plugin.setToolTip("lobster.lua config recovery plugin is not deployed. Click to install.")
+            dialog.btn_lobster_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
+
+        # 5. Hubcap button state & style
+        hubcap_state = get_plugin_state("hubcap.lua")
+        if hubcap_state == "up_to_date":
+            dialog.btn_hubcap_plugin.setEnabled(False)
+            dialog.btn_hubcap_plugin.setText("Hubcap (Active)")
+            dialog.btn_hubcap_plugin.setToolTip("hubcap.lua is deployed and active.")
+            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
+        else:
+            dialog.btn_hubcap_plugin.setEnabled(True)
+            status_txt = "Hubcap (Missing)" if hubcap_state == "missing" else "Hubcap (Update)"
+            dialog.btn_hubcap_plugin.setText(status_txt)
+            dialog.btn_hubcap_plugin.setToolTip("hubcap.lua bridge plugin is not deployed. Click to install.")
+            dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
+
     class DeployWorker(QThread):
         finished_signal = pyqtSignal(bool, bool, str, str, str)
 
@@ -627,6 +676,15 @@ def create_at0m_tab(dialog) -> QWidget:
     dialog.btn_spacebunny_plugin.clicked.connect(_on_spacebunny_clicked)
     dialog.btn_spliced_tickets.clicked.connect(_on_spliced_tickets_clicked)
 
+    def _on_lobster_clicked():
+        _deploy_single("lobster.lua", "Lobster Plugin", dialog.btn_lobster_plugin)
+
+    def _on_hubcap_clicked():
+        _deploy_single("hubcap.lua", "Hubcap Plugin", dialog.btn_hubcap_plugin)
+
+    dialog.btn_lobster_plugin.clicked.connect(_on_lobster_clicked)
+    dialog.btn_hubcap_plugin.clicked.connect(_on_hubcap_clicked)
+
     def _update_subwidget_states(enabled: bool):
         if getattr(dialog, "at0m_disable_updates_checkbox", None):
             dialog.at0m_disable_updates_checkbox.setEnabled(enabled)
@@ -644,7 +702,7 @@ def create_at0m_tab(dialog) -> QWidget:
         if checked:
             from utils.yaml_config_manager import ensure_sls_plugin_config_sections
             ensure_sls_plugin_config_sections(cfg_path)
-            for p_file in ("spacebunny1.5.lua", "spliced-tickets.lua", "lobster.lua"):
+            for p_file in ("spacebunny1.5.lua", "spliced-tickets.lua", "lobster.lua", "hubcap.lua"):
                 if get_plugin_state(p_file) == "missing":
                     deploy_sls_plugin(p_file)
         _refresh_deploy_ui()

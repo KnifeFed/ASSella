@@ -43,6 +43,7 @@ FALLBACK_REQUIRED_PLUGINS = [
     "spacebunny1.5.lua",
     "spliced-tickets.lua",
     "lobster.lua",
+    "hubcap.lua",
 ]
 
 
@@ -315,7 +316,7 @@ def get_active_interceptor_filename() -> Optional[str]:
                         p.is_file()
                         and not p.name.endswith(".bak")
                         and not p.name.startswith(".")
-                        and p.name not in ("spliced-tickets.lua", "lobster.lua")
+                        and p.name not in ("spliced-tickets.lua", "lobster.lua", "hubcap.lua")
                     ):
                         return p.name
     except Exception as e:
@@ -367,7 +368,7 @@ def are_plugins_present(ignore_bypass: bool = False) -> bool:
             if not p.name.endswith(".bak") and not p.name.startswith("."):
                 if p.name == "spliced-tickets.lua":
                     has_spliced = True
-                elif p.name != "lobster.lua":
+                elif p.name not in ("lobster.lua", "hubcap.lua"):
                     has_interceptor = True
 
     return has_interceptor and has_spliced
@@ -489,7 +490,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
     if not target_dirs:
         return False, False, "No valid SLSsteam plugin directories found."
 
-    is_interceptor = (filename not in ("spliced-tickets.lua", "lobster.lua"))
+    is_interceptor = (filename not in ("spliced-tickets.lua", "lobster.lua", "hubcap.lua"))
     all_matched = True
     any_deployed = False
     errors = []
@@ -515,7 +516,7 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
                         existing.is_file()
                         and not existing.name.endswith(".bak")
                         and not existing.name.startswith(".")
-                        and existing.name not in ("spliced-tickets.lua", "lobster.lua")
+                        and existing.name not in ("spliced-tickets.lua", "lobster.lua", "hubcap.lua")
                         and existing.name != filename
                     ):
                         try:

@@ -52,12 +52,53 @@ class ByparrManager:
 
     @classmethod
     def get_service_url(cls) -> str:
-        settings = get_settings()
-        return settings.value("byparr_url", BYPARR_DEFAULT_URL, type=str).rstrip("/")
+        try:
+            settings = get_settings()
+            url = settings.value("byparr_url", BYPARR_DEFAULT_URL, type=str).rstrip("/")
+            return url or BYPARR_DEFAULT_URL
+        except Exception:
+            return BYPARR_DEFAULT_URL
+
+    @classmethod
+    def get_auth_header(cls) -> str:
+        try:
+            settings = get_settings()
+            return settings.value("byparr_auth_header", "", type=str).strip()
+        except Exception:
+            return ""
+
+    @classmethod
+    def is_custom_service(cls) -> bool:
+        try:
+            settings = get_settings()
+            url = settings.value("byparr_url", "", type=str).strip()
+            return bool(url and url.rstrip("/") != BYPARR_DEFAULT_URL.rstrip("/"))
+        except Exception:
+            return False
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """True if either a custom byparr URL is configured or local byparr directory exists."""
+        return cls.is_custom_service() or (cls.find_byparr_dir() is not None)
 
     @classmethod
     def is_running(cls) -> bool:
-        """Quickly checks if Byparr is listening on the configured port."""
+        """Quickly checks if Byparr is listening on the configured port or endpoint."""
+        if cls.is_custom_service():
+            try:
+                import urllib.parse
+                url = cls.get_service_url()
+                parsed = urllib.parse.urlparse(url)
+                host = parsed.hostname or "127.0.0.1"
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.7)
+                res = s.connect_ex((host, port))
+                s.close()
+                return res == 0
+            except Exception:
+                return False
+
         try:
             port = BYPARR_DEFAULT_PORT
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -126,6 +167,9 @@ class ByparrManager:
         if get_settings().value("disable_steamdb_scraping", False, type=bool):
             logger.info("[SteamDB] Scraping disabled in Testing settings; will not start Byparr.")
             return False
+
+        if cls.is_custom_service():
+            return cls.is_running()
 
         if cls.is_running():
             return True
@@ -249,6 +293,66 @@ class ByparrManager:
                 pass
 
     @classmethod
+    def build_headers(cls, auth_header: Optional[str] = None) -> Dict[str, str]:
+        auth = auth_header if auth_header is not None else cls.get_auth_header()
+        headers = {"Content-Type": "application/json"}
+        if auth:
+            if ":" in auth:
+                k, v = auth.split(":", 1)
+                headers[k.strip()] = v.strip()
+            elif auth.lower().startswith("bearer "):
+                headers["Authorization"] = auth.strip()
+            else:
+                headers["Authorization"] = f"Bearer {auth.strip()}"
+        return headers
+
+    @classmethod
+    def test_connection(cls, service_url: str, auth_header: str = "", timeout_seconds: int = 15) -> Tuple[bool, str, float]:
+        """Test connection to Byparr or custom Cloudflare solver instance.
+        Sends a test Turnstile bypass request for steamdb.info.
+        Returns (success, message, latency_seconds).
+        """
+        url = (service_url or "").strip().rstrip("/")
+        if not url:
+            return False, "Service URL cannot be empty.", 0.0
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = f"http://{url}"
+
+        endpoint = f"{url}/v1"
+        headers = cls.build_headers(auth_header)
+        payload = {
+            "cmd": "request.get",
+            "url": "https://steamdb.info/",
+            "maxTimeout": timeout_seconds * 1000,
+            "returnOnlyCookies": True,
+        }
+
+        t0 = time.time()
+        try:
+            r = requests.post(endpoint, json=payload, headers=headers, timeout=timeout_seconds + 5)
+            elapsed = time.time() - t0
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                except Exception:
+                    return False, "Server replied 200 OK, but response was not valid JSON.", elapsed
+
+                if data.get("status") == "ok":
+                    sol = data.get("solution", {})
+                    sol_status = sol.get("status")
+                    if sol_status == 200:
+                        return True, f"Verified! SteamDB Turnstile solved successfully in {elapsed:.2f}s.", elapsed
+                    return False, f"Solver answered but SteamDB returned status {sol_status}.", elapsed
+                return False, f"Solver error: {data.get('message', 'Unknown solver status')}", elapsed
+            return False, f"Server returned HTTP {r.status_code}: {r.text[:120]}", elapsed
+        except requests.exceptions.Timeout:
+            return False, f"Connection timed out after {timeout_seconds} seconds.", time.time() - t0
+        except requests.exceptions.ConnectionError as ce:
+            return False, f"Failed to connect to {url}: {ce}", time.time() - t0
+        except Exception as exc:
+            return False, f"Request failed: {exc}", time.time() - t0
+
+    @classmethod
     def verify_steamdb_bypass(cls, timeout_seconds: int = 30) -> bool:
         """
         Actively verifies that Byparr can bypass Cloudflare Turnstile and reach SteamDB.
@@ -266,8 +370,9 @@ class ByparrManager:
             "maxTimeout": timeout_seconds * 1000 if timeout_seconds < 1000 else timeout_seconds,
             "returnOnlyCookies": True,
         }
+        headers = cls.build_headers()
         try:
-            r = requests.post(endpoint, json=payload, timeout=timeout_seconds + 10)
+            r = requests.post(endpoint, json=payload, headers=headers, timeout=timeout_seconds + 10)
             if r.status_code == 200:
                 data = r.json()
                 if data.get("status") == "ok":
@@ -291,6 +396,9 @@ class ByparrManager:
 
 # Register clean process termination on normal or unexpected Python exit
 atexit.register(ByparrManager.stop)
+
+# Public alias for connection test
+test_byparr_connection = ByparrManager.test_connection
 
 
 class SteamDBScraper:
@@ -316,9 +424,10 @@ class SteamDBScraper:
             "url": url,
             "maxTimeout": timeout_seconds * 1000 if timeout_seconds < 1000 else timeout_seconds,
         }
+        headers = ByparrManager.build_headers()
 
         try:
-            r = requests.post(endpoint, json=payload, timeout=timeout_seconds + 15)
+            r = requests.post(endpoint, json=payload, headers=headers, timeout=timeout_seconds + 15)
             if r.status_code == 200:
                 data = r.json()
                 sol = data.get("solution", {})

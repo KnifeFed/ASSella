@@ -509,8 +509,16 @@ class LibraryActionsMixin:
         from utils.plugin_manager import are_plugins_present
         settings = get_settings()
 
+        # Check if game was already configured in a specific mode (memory detection)
+        detected_mode = self._detect_configured_dlc_mode(appid, discovery)
+
         dlc_action = settings.value("at0m_default_dlc_action", "ask", type=str)
-        if dlc_action not in ("native", "assella"):
+        if detected_mode:
+            mode_choice = detected_mode
+            logger.info(f"DLC configuration for {name} ({appid}) automatically routed to existing mode: {mode_choice}")
+        elif dlc_action in ("native", "assella"):
+            mode_choice = dlc_action
+        else:
             from ui.dialogs.download_backend_dialog import (
                 DownloadBackendDialog,
                 BACKEND_CANCEL,
@@ -531,8 +539,6 @@ class LibraryActionsMixin:
             if choice == BACKEND_CANCEL:
                 return
             mode_choice = "native" if choice == BACKEND_NATIVE_STEAM else "assella"
-        else:
-            mode_choice = dlc_action
 
         if mode_choice == "native":
             if not discovery.has_sized_depots:
@@ -607,6 +613,7 @@ class LibraryActionsMixin:
                 game_data_dlc["_lock_storage"] = True
                 game_data_dlc["_is_atom_dlc"] = True
                 game_data_dlc["_dlc_catalog"] = dict(discovery.catalog)
+                game_data_dlc["_dlc_discovery"] = discovery
                 self._fetch_game_manifest(game_data_dlc, is_verify=False)
                 return
 
@@ -675,6 +682,75 @@ class LibraryActionsMixin:
                 parent_widget, "Registration Error", f"Failed to register DLCs into SLSsteam config:\n\n{exc}"
             )
             return False
+
+    def _detect_configured_dlc_mode(self, appid: str, discovery: Any = None) -> Optional[str]:
+        """Detect whether a game's DLCs were already configured in AT0-M or ASSella mode.
+
+        Returns:
+            "native" for AT0-M mode,
+            "assella" for ACCELA / ASSella mode,
+            or None if unconfigured.
+        """
+        appid_str = str(appid).strip()
+        if not appid_str:
+            return None
+
+        # 1. Check AT0-M configuration:
+        try:
+            from utils.plugin_games import load_plugin_library
+            plugin_lib = load_plugin_library()
+            p_rec = plugin_lib.get(appid_str, {})
+            if p_rec.get("is_atom") or p_rec.get("is_dlc_only") or p_rec.get("dlc_appids"):
+                return "native"
+        except Exception as e:
+            logger.debug(f"[DLCModeDetect] Error checking plugin_library for {appid_str}: {e}")
+
+        try:
+            from utils.yaml_config_manager import (
+                get_user_config_path,
+                get_dlc_data,
+                get_additional_apps,
+                get_additional_depots,
+            )
+            cfg_path = get_user_config_path()
+            if cfg_path and cfg_path.exists():
+                dlc_data = get_dlc_data(cfg_path, appid_str)
+                if dlc_data:
+                    return "native"
+
+                catalog = getattr(discovery, "catalog", {}) if discovery else {}
+                catalog_dlc_ids = {str(k).strip() for k in catalog.keys() if str(k).strip() != appid_str}
+                if catalog_dlc_ids:
+                    add_apps = set(get_additional_apps(cfg_path))
+                    if any(dlc_id in add_apps for dlc_id in catalog_dlc_ids):
+                        return "native"
+
+                cand_depots = getattr(discovery, "depots", []) if discovery else []
+                cand_depot_ids = {str(d.depot_id).strip() for d in cand_depots}
+                if cand_depot_ids:
+                    add_depots = set(get_additional_depots(cfg_path))
+                    if any(did in add_depots for did in cand_depot_ids):
+                        return "native"
+        except Exception as e:
+            logger.debug(f"[DLCModeDetect] Error checking SLSsteam config for {appid_str}: {e}")
+
+        # 2. Check ASSella (ACCELA) mode:
+        try:
+            from utils.helpers import get_base_path
+            depot_file = Path(get_base_path()) / "depots" / f"{appid_str}.depot"
+            if depot_file.exists() and depot_file.stat().st_size > 0:
+                return "assella"
+        except Exception as e:
+            logger.debug(f"[DLCModeDetect] Error checking .depot file for {appid_str}: {e}")
+
+        try:
+            from utils.dlc_helpers import is_dlc_only_mode
+            if is_dlc_only_mode(appid_str):
+                return "assella"
+        except Exception as e:
+            logger.debug(f"[DLCModeDetect] Error checking is_dlc_only_mode for {appid_str}: {e}")
+
+        return None
 
     def _save_config_only_dlc_mode(self, appid: str, game_data: dict, depot_dialog) -> bool:
         """Record DLC mode for a game whose DLCs have no downloadable depot.
@@ -3112,6 +3188,40 @@ class LibraryActionsMixin:
                 lock_storage = bool(is_installed or game_data.get("_lock_storage"))
                 lock_dlc_only = bool(game_data.get("_lock_dlc_only"))
                 dlc_only_mode = bool(game_data.get("_dlc_only") or lock_dlc_only)
+
+                is_atom_dlc = bool(game_data.get("_is_atom_dlc"))
+                if is_atom_dlc:
+                    from ui.dialogs.atom_dlc_selection_dialog import AtomDlcSelectionDialog
+                    accent_color = getattr(self, "accent_color", "#6c5ce7")
+                    atom_dlg = AtomDlcSelectionDialog(
+                        parent=parent_widget,
+                        app_id=parsed_data["appid"],
+                        game_name=parsed_data.get("game_name") or game_data.get("name") or game_info.get("name") or f"App {parsed_data['appid']}",
+                        accent_color=accent_color,
+                        discovery=game_data.get("_dlc_discovery"),
+                        manifest_data=parsed_data,
+                        cached_selected_depots=cached_selected,
+                    )
+                    atom_dlg.exec()
+                    if hasattr(self, "_active_fetches"):
+                        self._active_fetches.discard(appid)
+                    if dialog and hasattr(dialog, "validate_btn") and dialog.validate_btn:
+                        dialog.validate_btn.set_loading(False)
+                        dialog.validate_btn.setEnabled(True)
+                        if hasattr(dialog, "_update_validate_button_state"):
+                            dialog._update_validate_button_state()
+                        elif hasattr(dialog, "_update_validate_button"):
+                            dialog._update_validate_button()
+                    if dialog:
+                        try:
+                            dialog.accept()
+                        except RuntimeError:
+                            pass
+                    try:
+                        self.accept()
+                    except RuntimeError:
+                        pass
+                    return
 
                 depot_dialog = DepotSelectionDialog(
                     parsed_data["appid"],

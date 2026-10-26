@@ -455,12 +455,6 @@ def init_depots_tab(dialog) -> None:
     )
     layout.addWidget(keys_bulk_bar)
 
-    # Master Select All / None toggle bar at the bottom of the tab
-    tab_bulk_bar, tab_bulk_toggle, tab_btn_all, tab_btn_none = _make_bulk_toggle_bar(
-        "All Sections", lambda chk: _on_bulk_toggle_all(chk)
-    )
-    layout.addWidget(tab_bulk_bar)
-
     # Status Label
     status_lbl = QLabel("")
     status_lbl.setStyleSheet("color: rgba(255, 255, 255, 0.65); font-size: 8.5pt;")
@@ -1131,30 +1125,21 @@ def init_depots_tab(dialog) -> None:
         _internal_bulk_update = True
         try:
             apps = state["apps"]
-            if len(apps) > 5:
+            if len(apps) >= 5:
                 all_apps_on = bool(apps) and all(desired_apps.get(item["id"], False) for item in apps)
                 apps_bulk_toggle.setChecked(all_apps_on, animate=False)
 
             depots = state["depots"]
             valid_depots = [d for d in depots if not d.get("is_missing")]
-            if len(depots) > 5:
+            if len(depots) >= 5:
                 all_depots_on = bool(valid_depots) and all(desired_depots.get(item["id"], False) for item in valid_depots)
                 depots_bulk_toggle.setChecked(all_depots_on, animate=False)
 
             keys = state["keys"]
             valid_keys = [k for k in keys if k.get("key") and not k.get("is_missing")]
-            if len(keys) > 5:
+            if len(keys) >= 5:
                 all_keys_on = bool(valid_keys) and all(desired_keys.get(item["id"], False) for item in valid_keys)
                 keys_bulk_toggle.setChecked(all_keys_on, animate=False)
-
-            # Master tab toggle (if any category has >5 items)
-            if len(apps) > 5 or len(depots) > 5 or len(keys) > 5:
-                all_master_on = (
-                    (not apps or all(desired_apps.get(item["id"], False) for item in apps))
-                    and (not valid_depots or all(desired_depots.get(item["id"], False) for item in valid_depots))
-                    and (not valid_keys or all(desired_keys.get(item["id"], False) for item in valid_keys))
-                )
-                tab_bulk_toggle.setChecked(all_master_on, animate=False)
         finally:
             _internal_bulk_update = False
 
@@ -1380,8 +1365,8 @@ def init_depots_tab(dialog) -> None:
 
         _set_table_height(apps_table, len(apps))
 
-        # Bulk Select All/None for AdditionalApps (>5 items)
-        apps_bulk_bar.setVisible(len(apps) > 5)
+        # Bulk Select All/None for AdditionalApps (>=5 items)
+        apps_bulk_bar.setVisible(len(apps) >= 5)
         apps_bulk_toggle.setReadOnly(not is_unlocked)
         apps_btn_all.setEnabled(is_unlocked)
         apps_btn_none.setEnabled(is_unlocked)
@@ -1464,8 +1449,8 @@ def init_depots_tab(dialog) -> None:
 
         _set_table_height(depots_table, len(depots))
 
-        # Bulk Select All/None for AdditionalDepots (>5 items)
-        depots_bulk_bar.setVisible(len(depots) > 5)
+        # Bulk Select All/None for AdditionalDepots (>=5 items)
+        depots_bulk_bar.setVisible(len(depots) >= 5)
         depots_bulk_toggle.setReadOnly(not is_unlocked)
         depots_btn_all.setEnabled(is_unlocked)
         depots_btn_none.setEnabled(is_unlocked)
@@ -1556,18 +1541,11 @@ def init_depots_tab(dialog) -> None:
 
         _set_table_height(keys_table, len(keys))
 
-        # Bulk Select All/None for DecryptionKeys (>5 items)
-        keys_bulk_bar.setVisible(len(keys) > 5)
+        # Bulk Select All/None for DecryptionKeys (>=5 items)
+        keys_bulk_bar.setVisible(len(keys) >= 5)
         keys_bulk_toggle.setReadOnly(not is_unlocked)
         keys_btn_all.setEnabled(is_unlocked)
         keys_btn_none.setEnabled(is_unlocked)
-
-        # Master Select All/None at bottom of tab (if any category has >5 items)
-        has_large = len(apps) > 5 or len(depots) > 5 or len(keys) > 5
-        tab_bulk_bar.setVisible(has_large)
-        tab_bulk_toggle.setReadOnly(not is_unlocked)
-        tab_btn_all.setEnabled(is_unlocked)
-        tab_btn_none.setEnabled(is_unlocked)
 
         _update_sync_button_label(state)
         _update_bulk_states(state)
