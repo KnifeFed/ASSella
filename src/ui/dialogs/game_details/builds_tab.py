@@ -248,8 +248,8 @@ def init_builds_tab(dialog) -> None:
     page_layout.addWidget(dialog.builds_bottom_bar)
 
     try:
-        from core.steamdb_scraper import ByparrManager
-        has_byparr = ByparrManager.is_available()
+        from core.steamdb_scraper import ByparrManager, cffi_requests
+        has_byparr = ByparrManager.is_available() or (cffi_requests is not None)
     except Exception:
         has_byparr = False
     dialog.builds_bottom_bar.setVisible(has_byparr)
@@ -509,15 +509,6 @@ def fetch_steamdb_builds_async(dialog) -> None:
     if sip.isdeleted(dialog):
         return
 
-    try:
-        from core.steamdb_scraper import ByparrManager
-        if not ByparrManager.is_available():
-            on_builds_error(dialog, "Solver not configured")
-            return
-    except Exception:
-        on_builds_error(dialog, "Solver unavailable")
-        return
-
     dialog.builds_refresh_btn.setText("⟳  Checking...")
     dialog.builds_refresh_btn.setEnabled(False)
 
@@ -529,7 +520,14 @@ def fetch_steamdb_builds_async(dialog) -> None:
             aid = int(dialog.appid) if dialog.appid.isdigit() else 0
             data = dialog.steamdb_scraper.get_patchnotes(aid, limit=20)
             if not sip.isdeleted(dialog):
-                dialog.builds_loaded.emit(data)
+                if data:
+                    dialog.builds_loaded.emit(data)
+                else:
+                    from core.steamdb_scraper import ByparrManager
+                    if not ByparrManager.is_available():
+                        dialog.builds_error.emit("Cloudflare challenge encountered. Please configure Byparr or retry.")
+                    else:
+                        dialog.builds_error.emit("No build history found.")
         except Exception as e:
             logger.error(f"Failed to fetch builds for {dialog.appid}: {e}")
             if not sip.isdeleted(dialog):

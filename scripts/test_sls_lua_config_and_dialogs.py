@@ -52,12 +52,22 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
         self._tmp_dir = tempfile.TemporaryDirectory()
         self._orig_xdg = os.environ.get("XDG_CONFIG_HOME")
         os.environ["XDG_CONFIG_HOME"] = self._tmp_dir.name
+        try:
+            from core.steam_helpers import invalidate_steam_env_cache
+            invalidate_steam_env_cache()
+        except Exception:
+            pass
 
     def tearDown(self):
         if self._orig_xdg is not None:
             os.environ["XDG_CONFIG_HOME"] = self._orig_xdg
         else:
             os.environ.pop("XDG_CONFIG_HOME", None)
+        try:
+            from core.steam_helpers import invalidate_steam_env_cache
+            invalidate_steam_env_cache()
+        except Exception:
+            pass
         self._tmp_dir.cleanup()
 
     def test_single_depot_dialog_dlc_method(self):

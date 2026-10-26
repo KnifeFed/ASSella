@@ -1846,13 +1846,14 @@ class MainWindow(QMainWindow):
         self.quote_label.setToolTip(tooltip)
 
     def check_steamdb_status(self) -> None:
-        """Asynchronously verify that Byparr is running and SteamDB Cloudflare bypass works."""
+        """Asynchronously verify that SteamDB is accessible via fast-path or Byparr."""
         if getattr(self, "_steamdb_check_running", False):
             return
 
         try:
-            from core.steamdb_scraper import ByparrManager
-            if not ByparrManager.is_available():
+            from core.steamdb_scraper import ByparrManager, cffi_requests
+            has_solver = ByparrManager.is_available() or (cffi_requests is not None)
+            if not has_solver:
                 if hasattr(self, "steamdb_container"):
                     self.steamdb_container.setVisible(False)
                 return
@@ -1863,37 +1864,34 @@ class MainWindow(QMainWindow):
         if hasattr(self, "steamdb_status_value") and self.steamdb_status_value:
             self.steamdb_status_value.setText("Checking...")
             self.steamdb_status_value.setStyleSheet(self._get_status_style("neutral"))
-            self.steamdb_status_value.setToolTip("Verifying Byparr solver and SteamDB connection...")
+            self.steamdb_status_value.setToolTip("Verifying SteamDB connection and bypass status...")
 
         def _worker():
             try:
-                from core.steamdb_scraper import ByparrManager
-                if not ByparrManager.is_available():
-                    self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(False))
-                    return
-                ok = ByparrManager.verify_steamdb_bypass(timeout_seconds=30)
-                logger.info(f"[SteamDB Visor] verify_steamdb_bypass result: {ok}")
-                self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(ok))
+                from core.steamdb_scraper import verify_steamdb_status
+                ok, provider = verify_steamdb_status(timeout_seconds=5)
+                logger.info(f"[SteamDB Visor] verify_steamdb_status result: {ok} ({provider})")
+                self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(ok, provider))
             except Exception as e:
                 logger.debug(f"[SteamDB] Error during SteamDB status verification: {e}")
-                self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(False))
+                self._main_thread_callable.emit(lambda: self._on_steamdb_status_result(False, "Offline"))
             finally:
                 self._steamdb_check_running = False
 
         import threading
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _on_steamdb_status_result(self, is_working: bool) -> None:
-        """Display SteamDB visor item if Byparr is installed and working/ready."""
+    def _on_steamdb_status_result(self, is_working: bool, provider: str = "") -> None:
+        """Display SteamDB visor item if SteamDB is working/ready."""
         self._steamdb_verified = is_working
         if hasattr(self, "steamdb_container") and hasattr(self, "steamdb_status_value"):
             try:
-                from core.steamdb_scraper import ByparrManager
-                has_byparr = ByparrManager.is_available()
+                from core.steamdb_scraper import ByparrManager, cffi_requests
+                has_solver = ByparrManager.is_available() or (cffi_requests is not None)
             except Exception:
-                has_byparr = False
+                has_solver = False
 
-            if not has_byparr:
+            if not has_solver:
                 self.steamdb_container.setVisible(False)
                 return
 
@@ -1901,16 +1899,17 @@ class MainWindow(QMainWindow):
             if is_working:
                 self.steamdb_status_value.setText("Ready")
                 self.steamdb_status_value.setStyleSheet(self._get_status_style("success"))
+                mode_info = f" via {provider}" if provider else ""
                 self.steamdb_status_value.setToolTip(
-                    "SteamDB: Cloudflare Turnstile bypass active via Byparr\n"
+                    f"SteamDB: Active{mode_info}\n"
                     "Version history, patch notes & depot enrichment enabled."
                 )
-                logger.info("[SteamDB Visor] SteamDB status updated to: Ready")
+                logger.info(f"[SteamDB Visor] SteamDB status updated to: Ready ({provider})")
             else:
                 self.steamdb_status_value.setText("Offline")
                 self.steamdb_status_value.setStyleSheet(self._get_status_style("neutral"))
                 self.steamdb_status_value.setToolTip(
-                    "SteamDB: Solver is currently offline.\n"
+                    "SteamDB: Service or solver is currently offline.\n"
                     "It will start automatically when version history or builds are accessed."
                 )
                 logger.info("[SteamDB Visor] SteamDB status updated to: Offline")

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import logging
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -38,6 +39,61 @@ logger = logging.getLogger(__name__)
 BYPARR_DEFAULT_PORT = 8191
 BYPARR_DEFAULT_URL = f"http://127.0.0.1:{BYPARR_DEFAULT_PORT}"
 STEAMDB_BASE_URL = "https://steamdb.info"
+
+# Fast-path race profiles for Cloudflare bypass via direct TLS impersonation
+FAST_RACE_PROFILES = [
+    {
+        "name": "Chrome 152 (Windows)",
+        "impersonate": "chrome152",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Chromium";v="152", "Not(A:Brand";v="24", "Google Chrome";v="152"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+        },
+    },
+    {
+        "name": "Chrome 152 (macOS)",
+        "impersonate": "chrome152_macos",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Chromium";v="152", "Not(A:Brand";v="24", "Google Chrome";v="152"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"macOS"',
+        },
+    },
+    {
+        "name": "Safari 17.0 (macOS)",
+        "impersonate": "safari17_0",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    },
+    {
+        "name": "Safari 270 (macOS)",
+        "impersonate": "safari270",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    },
+    {
+        "name": "Safari 180 (iOS)",
+        "impersonate": "safari180_ios",
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    },
+]
 
 
 class ByparrManager:
@@ -419,20 +475,82 @@ atexit.register(ByparrManager.stop)
 test_byparr_connection = ByparrManager.test_connection
 
 
+def verify_steamdb_status(timeout_seconds: int = 5) -> Tuple[bool, str]:
+    """
+    Checks SteamDB accessibility.
+    First tests direct Fast-Path racing (<1s). If fast-path passes, returns (True, "Fast-Path (Direct TLS)").
+    If fast-path fails and Byparr is configured, verifies Byparr.
+    Returns (True/False, provider_name).
+    """
+    if cffi_requests:
+        try:
+            scraper = SteamDBScraper()
+            html = scraper.fetch_via_fast_race(f"{STEAMDB_BASE_URL}/", timeout_seconds=min(3.5, float(timeout_seconds)))
+            if html and len(html) > 500:
+                logger.info("[SteamDB] SteamDB status verified active via Fast-Path.")
+                return True, "Fast-Path (Direct TLS)"
+        except Exception as e:
+            logger.debug(f"[SteamDB] Fast-path status check error: {e}")
+
+    if ByparrManager.is_available():
+        ok = ByparrManager.verify_steamdb_bypass(timeout_seconds=timeout_seconds)
+        if ok:
+            return True, "Byparr"
+
+    return False, "Offline"
+
+
 class SteamDBScraper:
     """Scrapes SteamDB for patchnotes and depot manifest IDs."""
 
     def __init__(self, solver_url: Optional[str] = None):
         self.solver_url = solver_url or ByparrManager.get_service_url()
 
-    def fetch_rendered_html(self, url: str, timeout_seconds: int = 60) -> str:
+    def fetch_via_fast_race(self, url: str, timeout_seconds: float = 4.0) -> str:
+        """
+        Races multiple browser TLS / HTTP/2 impersonation profiles in parallel using curl_cffi.
+        Returns the HTML from the first profile that succeeds with HTTP 200 and no Cloudflare challenge.
+        """
+        if not cffi_requests:
+            return ""
+
+        def _try_profile(profile: Dict[str, Any]) -> Tuple[bool, str, str]:
+            try:
+                r = cffi_requests.get(
+                    url,
+                    impersonate=profile["impersonate"],
+                    headers=profile["headers"],
+                    timeout=timeout_seconds,
+                )
+                cf_mitigated = r.headers.get("Cf-Mitigated", "").lower()
+                is_challenge = cf_mitigated == "challenge" or "challenges.cloudflare.com" in r.text
+                if r.status_code == 200 and not is_challenge and len(r.text) > 500:
+                    return True, profile["name"], r.text
+                return False, profile["name"], ""
+            except Exception:
+                return False, profile["name"], ""
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(FAST_RACE_PROFILES)) as executor:
+                futures = {executor.submit(_try_profile, p): p for p in FAST_RACE_PROFILES}
+                for f in concurrent.futures.as_completed(futures, timeout=timeout_seconds + 1.0):
+                    success, name, html = f.result()
+                    if success:
+                        logger.info(f"[SteamDB] Fast-path race won by profile '{name}' for {url}")
+                        for remaining in futures:
+                            remaining.cancel()
+                        return html
+        except concurrent.futures.TimeoutError:
+            logger.debug(f"[SteamDB] Fast-path race timed out after {timeout_seconds}s for {url}")
+        except Exception as e:
+            logger.debug(f"[SteamDB] Error during fast-path race: {e}")
+
+        return ""
+
+    def fetch_via_byparr(self, url: str, timeout_seconds: int = 60) -> str:
         """
         Fetches the fully-rendered DOM from SteamDB via Byparr (which executes JS & bypasses Turnstile).
         """
-        if get_settings().value("disable_steamdb_scraping", False, type=bool):
-            logger.info("[SteamDB] Scraping disabled in Testing settings; skipping fetch.")
-            return ""
-
         if not ByparrManager.is_running():
             ByparrManager.ensure_running()
 
@@ -450,7 +568,7 @@ class SteamDBScraper:
                 data = r.json()
                 sol = data.get("solution", {})
                 html = sol.get("response", "")
-                
+
                 # Cache cookies & user-agent for fast static requests
                 cookies = {c["name"]: c["value"] for c in sol.get("cookies", [])}
                 ua = sol.get("userAgent", "")
@@ -460,7 +578,7 @@ class SteamDBScraper:
                     s.setValue("steamdb/user_agent", ua)
                     s.setValue("steamdb/cf_clearance", cf_val)
                     s.setValue("steamdb/clearance_timestamp", int(time.time()))
-                
+
                 return html
             else:
                 logger.error(f"[SteamDB] Byparr returned status {r.status_code}: {r.text[:200]}")
@@ -469,21 +587,41 @@ class SteamDBScraper:
 
         return ""
 
-    def get_patchnotes(self, appid: int, limit: int = 40) -> List[Dict[str, Any]]:
+    def fetch_rendered_html(self, url: str, timeout_seconds: int = 60, allow_fast_path: bool = True) -> str:
         """
-        Scrapes https://steamdb.info/app/<appid>/patchnotes/
-        Returns list of patch dictionaries:
-        [{date, day, time, title, buildid, patchnotes_url}]
+        Fetches SteamDB HTML. First races multiple direct TLS profiles (fast-path).
+        If fast-path is challenged or unavailable and Byparr is configured, falls back to Byparr.
         """
-        url = f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/"
-        html = self.fetch_rendered_html(url)
+        if get_settings().value("disable_steamdb_scraping", False, type=bool):
+            logger.info("[SteamDB] Scraping disabled in Testing settings; skipping fetch.")
+            return ""
+
+        # 1. Fast-path multi-profile race
+        if allow_fast_path and cffi_requests:
+            has_byparr = ByparrManager.is_available()
+            fast_timeout = 4.0 if has_byparr else 8.0
+            t0 = time.time()
+            html = self.fetch_via_fast_race(url, timeout_seconds=fast_timeout)
+            if html:
+                return html
+            elapsed = time.time() - t0
+            logger.info(f"[SteamDB] Fast-path did not resolve cleanly ({elapsed:.2f}s). Byparr available: {has_byparr}")
+
+        # 2. Byparr fallback (if available)
+        if ByparrManager.is_available():
+            return self.fetch_via_byparr(url, timeout_seconds=timeout_seconds)
+
+        return ""
+
+    def _parse_patchnotes_html(self, html: str, limit: int = 40) -> List[Dict[str, Any]]:
+        """Parses builds from either dynamic client-side JS table or static HTML branches table."""
         if not html:
             return []
 
         soup = BeautifulSoup(html, "html.parser")
         results = []
 
-        # Find the table containing "Patch Title"
+        # Parser 1: Find the table containing "Patch Title" (rendered by Byparr / browser JS)
         for table in soup.find_all("table"):
             headers = [th.get_text(strip=True) for th in table.find_all("th")]
             if any("patch title" in h.lower() for h in headers):
@@ -496,7 +634,6 @@ class SteamDBScraper:
                         title_str = cols[3] if len(cols) > 3 else ""
                         build_id = cols[-1] if len(cols) > 4 else ""
 
-                        # Extract clean build ID (digits only)
                         clean_bid = "".join(re.findall(r"\d+", build_id))
                         if not clean_bid:
                             for a in row.find_all("a", href=True):
@@ -523,7 +660,68 @@ class SteamDBScraper:
                             if len(results) >= limit:
                                 break
                 if results:
-                    break
+                    return results
+
+        # Parser 2: Parse static branches/builds table (static HTML from fast-path)
+        for table in soup.find_all("table"):
+            headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
+            if "build id" in headers or any("build" in h for h in headers):
+                for row in table.find_all("tr")[1:]:
+                    cols = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+                    clean_bid = ""
+                    patch_url = ""
+                    for a in row.find_all("a", href=True):
+                        m = re.search(r"/patchnotes/(\d+)", a["href"])
+                        if m:
+                            clean_bid = m.group(1)
+                            patch_url = f"{STEAMDB_BASE_URL}{a['href']}" if a["href"].startswith("/") else a["href"]
+                            break
+                    if not clean_bid and cols:
+                        for col in cols:
+                            digits = "".join(re.findall(r"^\d{7,10}$", col))
+                            if digits:
+                                clean_bid = digits
+                                patch_url = f"{STEAMDB_BASE_URL}/patchnotes/{clean_bid}/"
+                                break
+                    if clean_bid:
+                        branch_name = cols[0] if cols else ""
+                        desc = cols[1] if len(cols) > 1 and cols[1] != branch_name else ""
+                        title = f"{branch_name} - {desc}".strip(" -") if desc else (branch_name or f"Build {clean_bid}")
+                        time_str = cols[-1] if len(cols) > 3 else ""
+                        results.append({
+                            "date": time_str.split("–")[0].strip() if "–" in time_str else time_str,
+                            "day": "",
+                            "time": time_str.split("–")[1].strip() if "–" in time_str else "",
+                            "title": title or f"Update (Build {clean_bid})",
+                            "buildid": clean_bid,
+                            "patchnotes_url": patch_url,
+                        })
+                        if len(results) >= limit:
+                            break
+                if results:
+                    return results
+
+        return results
+
+    def get_patchnotes(self, appid: int, limit: int = 40) -> List[Dict[str, Any]]:
+        """
+        Scrapes https://steamdb.info/app/<appid>/patchnotes/
+        Returns list of patch dictionaries:
+        [{date, day, time, title, buildid, patchnotes_url}]
+        """
+        url = f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/"
+        html = self.fetch_rendered_html(url)
+        if not html:
+            return []
+
+        results = self._parse_patchnotes_html(html, limit=limit)
+
+        # Dual parser fallback: if fast-path static HTML didn't yield builds, but Byparr is available, try Byparr once
+        if not results and ByparrManager.is_available():
+            logger.info(f"[SteamDB] Fast-path HTML did not yield patchnotes for App {appid}. Falling back to Byparr...")
+            byparr_html = self.fetch_via_byparr(url, timeout_seconds=60)
+            if byparr_html:
+                results = self._parse_patchnotes_html(byparr_html, limit=limit)
 
         logger.info(f"[SteamDB] Parsed {len(results)} patchnotes entries for App {appid}")
         return results

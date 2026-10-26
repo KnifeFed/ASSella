@@ -338,6 +338,59 @@ Lobster = {
 
         print("  [PASS] PlatformMismatchDialog and single DLC badge verified")
 
+    def test_07_steamdb_scraper_fast_path_and_dual_parser(self):
+        """Verify SteamDBScraper fast-path race setup and dual patchnotes parser."""
+        from core.steamdb_scraper import SteamDBScraper, verify_steamdb_status
+
+        scraper = SteamDBScraper()
+        self.assertTrue(hasattr(scraper, "fetch_via_fast_race"))
+        self.assertTrue(hasattr(scraper, "fetch_via_byparr"))
+        self.assertTrue(hasattr(scraper, "_parse_patchnotes_html"))
+
+        # Test Parser 1: Dynamic Byparr HTML format
+        mock_dynamic_html = """
+        <html><body>
+        <table>
+            <tr><th>Date</th><th>Day</th><th>Time</th><th>Patch Title</th><th>BuildID</th></tr>
+            <tr>
+                <td>2026-10-25</td><td>Sun</td><td>12:00</td>
+                <td>Major Update 2.0</td>
+                <td><a href="/patchnotes/999888/">999888</a></td>
+            </tr>
+        </table>
+        </body></html>
+        """
+        parsed_dynamic = scraper._parse_patchnotes_html(mock_dynamic_html)
+        self.assertEqual(len(parsed_dynamic), 1)
+        self.assertEqual(parsed_dynamic[0]["buildid"], "999888")
+        self.assertEqual(parsed_dynamic[0]["title"], "Major Update 2.0")
+
+        # Test Parser 2: Static fast-path HTML format
+        mock_static_html = """
+        <html><body>
+        <table>
+            <tr><th>Name</th><th>Description</th><th>Build ID</th><th>Time Built</th><th>Time Updated</th></tr>
+            <tr>
+                <td>public</td>
+                <td>Public Release Branch</td>
+                <td><a href="/patchnotes/888777/">888777</a></td>
+                <td>2026-10-24</td>
+                <td>24 October 2026 – 10:00:00 UTC</td>
+            </tr>
+        </table>
+        </body></html>
+        """
+        parsed_static = scraper._parse_patchnotes_html(mock_static_html)
+        self.assertEqual(len(parsed_static), 1)
+        self.assertEqual(parsed_static[0]["buildid"], "888777")
+        self.assertEqual(parsed_static[0]["title"], "public - Public Release Branch")
+
+        # Test verify_steamdb_status callable
+        ok, provider = verify_steamdb_status(timeout_seconds=3)
+        self.assertIsInstance(ok, bool)
+        self.assertIsInstance(provider, str)
+        print(f"  [PASS] SteamDB fast-path and dual parser verified (Live status: ok={ok}, provider={provider})")
+
 
 if __name__ == "__main__":
     unittest.main()

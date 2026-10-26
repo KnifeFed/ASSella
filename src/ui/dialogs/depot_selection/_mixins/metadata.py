@@ -489,9 +489,8 @@ class DepotMetadataMixin:
                 scraper = SteamDBScraper()
                 depots_info = {}
 
-                # Try SteamDB via Byparr if running
-                if ByparrManager.is_running():
-                    depots_info = scraper.get_app_depots(str(self.app_id))
+                # Try SteamDB (via Fast-Path race or Byparr)
+                depots_info = scraper.get_app_depots(str(self.app_id))
 
                 # Fast fallback: if SteamDB returned empty or Byparr is not running, query Steam Store API
                 if not depots_info:
