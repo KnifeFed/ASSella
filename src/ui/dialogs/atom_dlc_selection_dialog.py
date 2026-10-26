@@ -93,8 +93,8 @@ class AtomDlcSelectionDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.setMinimumWidth(720)
-        self.resize(760, 680)
+        self.setMinimumSize(560, 440)
+        self.resize(620, 500)
 
         # State tracking
         self.desired_apps: Dict[str, bool] = {}
@@ -122,6 +122,14 @@ class AtomDlcSelectionDialog(QDialog):
                 background-color: #16181f;
                 border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 10px;
+            }
+            QToolTip {
+                background-color: #1e2029;
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                padding: 5px 8px;
+                font-size: 8.5pt;
             }
         """)
         card_layout = QVBoxLayout(card)
@@ -443,26 +451,29 @@ class AtomDlcSelectionDialog(QDialog):
             is_owned = dinfo["is_owned"]
 
             id_item = QTableWidgetItem(dlc_id)
-            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.apps_table.setItem(row, 0, id_item)
-
-            name_item = QTableWidgetItem(dlc_name)
-            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.apps_table.setItem(row, 1, name_item)
-
             if is_owned:
+                id_item.setFlags(Qt.ItemFlag.NoItemFlags)
                 id_item.setForeground(darker_grey)
-                name_item.setForeground(darker_grey)
                 tip = f"{dlc_name} ({dlc_id})\nOwned on Steam"
                 id_item.setToolTip(tip)
+
+                name_item = QTableWidgetItem(f"{dlc_name} (Owned)")
+                name_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                name_font = name_item.font()
+                name_font.setItalic(True)
+                name_item.setFont(name_font)
+                name_item.setForeground(darker_grey)
                 name_item.setToolTip(tip)
 
-                toggle = MiniSwitchToggle(checked=True, read_only=True)
+                toggle = MiniSwitchToggle(checked=True, read_only=True, greyscaled=True)
                 toggle.setEnabled(False)
                 toggle.setToolTip("Owned on Steam")
             else:
+                id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                name_item = QTableWidgetItem(dlc_name)
+                name_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 name_item.setToolTip(f"{dlc_name} ({dlc_id})")
-                toggle = MiniSwitchToggle(checked=True, read_only=False)
+                toggle = MiniSwitchToggle(checked=True, read_only=False, greyscaled=False)
                 self.desired_apps[dlc_id] = True
 
                 def _make_app_cb(aid: str):
@@ -475,6 +486,8 @@ class AtomDlcSelectionDialog(QDialog):
 
                 toggle.toggled.connect(_make_app_cb(dlc_id))
 
+            self.apps_table.setItem(row, 0, id_item)
+            self.apps_table.setItem(row, 1, name_item)
             self.app_toggles[dlc_id] = toggle
             self.apps_table.setCellWidget(row, 2, _ToggleContainer(toggle))
 
@@ -492,32 +505,37 @@ class AtomDlcSelectionDialog(QDialog):
             is_missing = dinfo.get("is_missing", False)
 
             id_item = QTableWidgetItem(did)
-            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.depots_table.setItem(row, 0, id_item)
-
-            desc_text = dinfo["name"]
-            if is_missing and dinfo.get("missing_tag"):
-                desc_text = f"{dinfo['missing_tag']}  {desc_text}"
-
-            desc_item = QTableWidgetItem(desc_text)
-            desc_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.depots_table.setItem(row, 1, desc_item)
 
             if is_owned:
+                id_item.setFlags(Qt.ItemFlag.NoItemFlags)
                 id_item.setForeground(darker_grey)
-                desc_item.setForeground(darker_grey)
                 tip = f"Depot {did} ({dinfo['name']})\nOwned on Steam"
                 id_item.setToolTip(tip)
+
+                desc_item = QTableWidgetItem(f"{dinfo['name']} (Owned)")
+                desc_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                desc_font = desc_item.font()
+                desc_font.setItalic(True)
+                desc_item.setFont(desc_font)
+                desc_item.setForeground(darker_grey)
                 desc_item.setToolTip(tip)
 
-                toggle = MiniSwitchToggle(checked=True, read_only=True)
+                toggle = MiniSwitchToggle(checked=True, read_only=True, greyscaled=True)
                 toggle.setEnabled(False)
                 toggle.setToolTip("Owned on Steam")
             elif is_missing:
+                id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 id_item.setForeground(QColor(130, 130, 130))
                 font = id_item.font()
                 font.setItalic(True)
                 id_item.setFont(font)
+
+                desc_text = dinfo["name"]
+                if dinfo.get("missing_tag"):
+                    desc_text = f"{dinfo['missing_tag']}  {desc_text}"
+
+                desc_item = QTableWidgetItem(desc_text)
+                desc_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
 
                 m_stat = dinfo.get("missing_status")
                 if m_stat == "ready_on_hubcap":
@@ -531,12 +549,15 @@ class AtomDlcSelectionDialog(QDialog):
                 desc_item.setFont(font_d)
                 desc_item.setToolTip(dinfo["name"])
 
-                toggle = MiniSwitchToggle(checked=False, read_only=True)
+                toggle = MiniSwitchToggle(checked=False, read_only=True, greyscaled=False)
                 toggle.setEnabled(False)
                 toggle.setToolTip("Depot decryption key is missing from Hubcap.")
             else:
+                id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                desc_item = QTableWidgetItem(dinfo["name"])
+                desc_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 desc_item.setToolTip(dinfo["name"])
-                toggle = MiniSwitchToggle(checked=True, read_only=False)
+                toggle = MiniSwitchToggle(checked=True, read_only=False, greyscaled=False)
                 self.desired_depots[did] = True
 
                 def _make_depot_cb(depot_id: str):
@@ -548,6 +569,8 @@ class AtomDlcSelectionDialog(QDialog):
 
                 toggle.toggled.connect(_make_depot_cb(did))
 
+            self.depots_table.setItem(row, 0, id_item)
+            self.depots_table.setItem(row, 1, desc_item)
             self.depot_toggles[did] = toggle
             self.depots_table.setCellWidget(row, 2, _ToggleContainer(toggle))
 
@@ -565,25 +588,28 @@ class AtomDlcSelectionDialog(QDialog):
             is_missing = kinfo.get("is_missing", False)
 
             id_item = QTableWidgetItem(kid)
-            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.keys_table.setItem(row, 0, id_item)
 
             if is_owned:
                 raw_key = kinfo.get("key", "")
                 short_key = f"{raw_key[:15]}..." if len(raw_key) > 15 else (raw_key or "N/A")
-                key_item = QTableWidgetItem(short_key)
-                key_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                id_item.setFlags(Qt.ItemFlag.NoItemFlags)
                 id_item.setForeground(darker_grey)
-                key_item.setForeground(darker_grey)
                 tip = f"AES Key for {kinfo.get('desc', kid)}\nOwned on Steam"
                 id_item.setToolTip(tip)
-                key_item.setToolTip(tip)
-                self.keys_table.setItem(row, 1, key_item)
 
-                toggle = MiniSwitchToggle(checked=True, read_only=True)
+                key_item = QTableWidgetItem(f"{short_key} (Owned)")
+                key_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                key_font = key_item.font()
+                key_font.setItalic(True)
+                key_item.setFont(key_font)
+                key_item.setForeground(darker_grey)
+                key_item.setToolTip(tip)
+
+                toggle = MiniSwitchToggle(checked=True, read_only=True, greyscaled=True)
                 toggle.setEnabled(False)
                 toggle.setToolTip("Owned on Steam")
             elif is_missing:
+                id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 id_item.setForeground(QColor(130, 130, 130))
                 font = id_item.font()
                 font.setItalic(True)
@@ -597,19 +623,18 @@ class AtomDlcSelectionDialog(QDialog):
                 font_k.setItalic(True)
                 key_item.setFont(font_k)
                 key_item.setToolTip("No AES decryption key available.")
-                self.keys_table.setItem(row, 1, key_item)
 
-                toggle = MiniSwitchToggle(checked=False, read_only=True)
+                toggle = MiniSwitchToggle(checked=False, read_only=True, greyscaled=False)
                 toggle.setEnabled(False)
             else:
+                id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 raw_key = kinfo.get("key", "")
                 short_key = f"{raw_key[:15]}..." if len(raw_key) > 15 else (raw_key or "N/A")
                 key_item = QTableWidgetItem(short_key)
                 key_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 key_item.setToolTip(f"AES Key for {kinfo.get('desc', kid)}")
-                self.keys_table.setItem(row, 1, key_item)
 
-                toggle = MiniSwitchToggle(checked=True, read_only=False)
+                toggle = MiniSwitchToggle(checked=True, read_only=False, greyscaled=False)
                 self.desired_keys[kid] = True
 
                 def _make_key_cb(key_id: str):
@@ -620,6 +645,8 @@ class AtomDlcSelectionDialog(QDialog):
 
                 toggle.toggled.connect(_make_key_cb(kid))
 
+            self.keys_table.setItem(row, 0, id_item)
+            self.keys_table.setItem(row, 1, key_item)
             self.key_toggles[kid] = toggle
             self.keys_table.setCellWidget(row, 2, _ToggleContainer(toggle))
 

@@ -122,15 +122,29 @@ def get_active_download_plugin() -> Optional[str]:
 def get_available_download_plugins() -> list[tuple[str, str]]:
     """Return available download plugins as list of (display_name, filename)."""
     try:
-        from utils.plugin_manager import get_default_interceptor_from_manifest
+        from utils.plugin_manager import (
+            get_default_interceptor_from_manifest,
+            get_plugin_version,
+            get_manifest_plugin_info,
+        )
         def_interceptor = get_default_interceptor_from_manifest()
+        sb_ver = get_plugin_version("spacebunny.lua") or ""
+        std_ver = get_plugin_version("download.lua") or ""
     except Exception:
-        def_interceptor = "spacebunny1.5.lua"
+        def_interceptor = "spacebunny.lua"
+        sb_ver = ""
+        std_ver = ""
 
-    sb_label = "SpaceBunny 1.5 (Default)" if def_interceptor == "spacebunny1.5.lua" else "SpaceBunny 1.5"
-    std_label = "Standard (download.lua) (Default)" if def_interceptor == "download.lua" else "Standard (download.lua)"
+    sb_title = f"SpaceBunny {sb_ver}".strip()
+    std_title = f"Standard {std_ver}".strip()
+
+    is_sb_default = def_interceptor in ("spacebunny.lua", "spacebunny1.5.lua")
+    sb_label = f"{sb_title} (Default)" if is_sb_default else sb_title
+    std_label = f"{std_title} (download.lua) (Default)" if def_interceptor == "download.lua" else f"{std_title} (download.lua)"
+
+    sb_filename = "spacebunny.lua" if (def_interceptor == "spacebunny.lua" or get_manifest_plugin_info("spacebunny.lua")) else "spacebunny1.5.lua"
     options = [
-        (sb_label, "spacebunny1.5.lua"),
+        (sb_label, sb_filename),
         (std_label, "download.lua"),
     ]
     try:
@@ -499,17 +513,39 @@ def create_at0m_tab(dialog) -> QWidget:
     """
 
     def _refresh_deploy_ui():
-        from utils.plugin_manager import get_default_interceptor_from_manifest, is_plugin_user_disabled
+        from utils.plugin_manager import (
+            get_default_interceptor_from_manifest,
+            get_plugin_version,
+            is_plugin_user_disabled,
+        )
         is_custom = dialog.settings.value("custom_plugins_advanced", False, type=bool)
         std_state = get_plugin_state("download.lua")
-        space_state = get_plugin_state("spacebunny1.5.lua")
+        space_state = get_plugin_state("spacebunny.lua")
+        if space_state == "missing":
+            space_state = get_plugin_state("spacebunny1.5.lua")
         spliced_state = get_plugin_state("spliced-tickets.lua")
         active_dl = get_active_download_plugin()
         active_lower = (active_dl or "").lower()
 
+        sb_ver = get_plugin_version("spacebunny.lua") or ""
+        sb_name = f"SpaceBunny {sb_ver}".strip()
+
+        std_ver = get_plugin_version("download.lua") or ""
+        std_name = f"Standard {std_ver}".strip()
+
+        st_ver = get_plugin_version("spliced-tickets.lua") or ""
+        st_name = f"Spliced Tickets {st_ver}".strip()
+
+        lob_ver = get_plugin_version("lobster.lua") or ""
+        lob_name = f"Lobster {lob_ver}".strip()
+
+        hub_ver = get_plugin_version("hubcap.lua") or ""
+        hub_name = f"Hubcap {hub_ver}".strip()
+
         def_interceptor = get_default_interceptor_from_manifest()
-        sb_base = "SpaceBunny (Default)" if def_interceptor == "spacebunny1.5.lua" else "SpaceBunny"
-        std_base = "Standard (Default)" if def_interceptor == "download.lua" else "Standard"
+        is_sb_default = def_interceptor in ("spacebunny.lua", "spacebunny1.5.lua")
+        sb_base = f"{sb_name} (Default)" if is_sb_default else sb_name
+        std_base = f"{std_name} (Default)" if def_interceptor == "download.lua" else std_name
 
         is_space_active = ("spacebunny" in active_lower) or ("spacetest" in active_lower)
         is_std_active = (active_dl == "download.lua")
@@ -540,7 +576,7 @@ def create_at0m_tab(dialog) -> QWidget:
             # SpaceBunny is inactive (clickable to switch)
             dialog.btn_spacebunny_plugin.setEnabled(True)
             dialog.btn_spacebunny_plugin.setText(sb_base)
-            dialog.btn_spacebunny_plugin.setToolTip("Click to activate SpaceBunny 1.5 (archives download.lua to .bak).")
+            dialog.btn_spacebunny_plugin.setToolTip("Click to activate SpaceBunny (archives download.lua to .bak).")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
 
         elif is_space_active:
@@ -548,12 +584,12 @@ def create_at0m_tab(dialog) -> QWidget:
             if space_state == "up_to_date":
                 dialog.btn_spacebunny_plugin.setEnabled(False)
                 dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Active)")
-                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is currently active and verified against Cloudflare manifest.")
+                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny is currently active and verified against Cloudflare manifest.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
             else:
                 dialog.btn_spacebunny_plugin.setEnabled(True)
                 dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Update)")
-                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is active but outdated. Click to update from Cloudflare.")
+                dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny is active but outdated. Click to update from Cloudflare.")
                 dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
             # Standard is inactive (clickable to switch)
@@ -571,18 +607,18 @@ def create_at0m_tab(dialog) -> QWidget:
 
             dialog.btn_spacebunny_plugin.setEnabled(True)
             dialog.btn_spacebunny_plugin.setText(f"{sb_base} (Missing)")
-            dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny 1.5 is not installed. Click to download and activate.")
+            dialog.btn_spacebunny_plugin.setToolTip("SpaceBunny is not installed. Click to download and activate.")
             dialog.btn_spacebunny_plugin.setStyleSheet(STYLE_ATTENTION_ORANGE)
 
         # 3. Spliced Tickets button state & style
         if spliced_state == "up_to_date":
             dialog.btn_spliced_tickets.setEnabled(False)
-            dialog.btn_spliced_tickets.setText("Spliced Tickets")
+            dialog.btn_spliced_tickets.setText(st_name)
             dialog.btn_spliced_tickets.setToolTip("spliced-tickets.lua is deployed and active.")
             dialog.btn_spliced_tickets.setStyleSheet(STYLE_ACTIVE_GREEN)
         else:
             dialog.btn_spliced_tickets.setEnabled(True)
-            status_txt = "Spliced Tickets (Missing)" if spliced_state == "missing" else "Spliced Tickets (Update)"
+            status_txt = f"{st_name} (Missing)" if spliced_state == "missing" else f"{st_name} (Update)"
             dialog.btn_spliced_tickets.setText(status_txt)
             dialog.btn_spliced_tickets.setToolTip("spliced-tickets.lua is not deployed. Click to download and install.")
             dialog.btn_spliced_tickets.setStyleSheet(STYLE_ATTENTION_ORANGE)
@@ -592,11 +628,11 @@ def create_at0m_tab(dialog) -> QWidget:
         lobster_desc = "Headcrab config recovery - restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates"
         dialog.btn_lobster_plugin.setEnabled(True)
         if lobster_state != "missing":
-            dialog.btn_lobster_plugin.setText("Lobster (Active)")
+            dialog.btn_lobster_plugin.setText(f"{lob_name} (Active)")
             dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to disable (removes from plugins directory).")
             dialog.btn_lobster_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
         else:
-            lbl_text = "Lobster (Disabled)" if is_plugin_user_disabled("lobster.lua") else "Lobster"
+            lbl_text = f"{lob_name} (Disabled)" if is_plugin_user_disabled("lobster.lua") else lob_name
             dialog.btn_lobster_plugin.setText(lbl_text)
             dialog.btn_lobster_plugin.setToolTip(f"{lobster_desc}\n\nClick to enable and deploy.")
             dialog.btn_lobster_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
@@ -606,11 +642,11 @@ def create_at0m_tab(dialog) -> QWidget:
         hubcap_desc = "(Optional) Auto fetch depotkey when Steam asks for (experimental)"
         dialog.btn_hubcap_plugin.setEnabled(True)
         if hubcap_state != "missing":
-            dialog.btn_hubcap_plugin.setText("Hubcap (Active)")
+            dialog.btn_hubcap_plugin.setText(f"{hub_name} (Active)")
             dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to disable (removes from plugins directory).")
             dialog.btn_hubcap_plugin.setStyleSheet(STYLE_ACTIVE_GREEN)
         else:
-            lbl_text = "Hubcap (Disabled)" if is_plugin_user_disabled("hubcap.lua") else "Hubcap"
+            lbl_text = f"{hub_name} (Disabled)" if is_plugin_user_disabled("hubcap.lua") else hub_name
             dialog.btn_hubcap_plugin.setText(lbl_text)
             dialog.btn_hubcap_plugin.setToolTip(f"{hubcap_desc}\n\nClick to enable and deploy.")
             dialog.btn_hubcap_plugin.setStyleSheet(STYLE_INACTIVE_BUTTON)
@@ -667,7 +703,10 @@ def create_at0m_tab(dialog) -> QWidget:
         _deploy_single("download.lua", "Standard Plugin", dialog.btn_standard_plugin)
 
     def _on_spacebunny_clicked():
-        _deploy_single("spacebunny1.5.lua", "SpaceBunny", dialog.btn_spacebunny_plugin)
+        from utils.plugin_manager import get_manifest_plugin_info, get_default_interceptor_from_manifest
+        def_name = get_default_interceptor_from_manifest()
+        sb_target = "spacebunny.lua" if (get_manifest_plugin_info("spacebunny.lua") or def_name == "spacebunny.lua") else "spacebunny1.5.lua"
+        _deploy_single(sb_target, "SpaceBunny", dialog.btn_spacebunny_plugin)
 
     def _on_spliced_tickets_clicked():
         reply = ThemedMessageBox.warning(

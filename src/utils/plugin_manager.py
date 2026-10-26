@@ -9,13 +9,14 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from utils.helpers import get_base_path
 from utils.paths import Paths
@@ -199,6 +200,123 @@ def get_manifest_plugin_info(filename: str) -> Optional[Dict[str, Any]]:
     manifest = fetch_plugins_manifest()
     if manifest and "plugins" in manifest:
         return manifest["plugins"].get(filename)
+    return None
+
+
+def extract_plugin_version(content_or_path: Union[str, Path, bytes]) -> Optional[str]:
+    """Extract semantic version string from Lua file content or path."""
+    try:
+        if isinstance(content_or_path, Path):
+            if not content_or_path.is_file():
+                return None
+            content = content_or_path.read_text(encoding="utf-8", errors="ignore")
+        elif isinstance(content_or_path, bytes):
+            content = content_or_path.decode("utf-8", errors="ignore")
+        else:
+            content = str(content_or_path)
+
+        # 1. Match VERSION = "1.8.2" or table.VERSION = "1.8.2"
+        m = re.search(r'\bVERSION\s*=\s*["\']([^"\']+)["\']', content, re.IGNORECASE)
+        if m:
+            sem = re.search(r'(\d+\.\d+(?:\.\d+)?(?:[a-zA-Z0-9_\.\-]+)?)', m.group(1))
+            if sem:
+                return sem.group(1)
+
+        # 2. Match header comment e.g. -- spacebunny.lua (1.8.2)
+        m2 = re.search(r'^--\s*[\w\.\-]+\.lua\s*\((v?\d+(?:\.\d+)*(?:[a-zA-Z0-9_\.\-]+)?)\)', content, re.MULTILINE | re.IGNORECASE)
+        if m2:
+            return m2.group(1).lstrip("v")
+
+        # 3. Match header comment e.g. -- Version: 1.8.2
+        m3 = re.search(r'^--\s*(?:version|ver|v)\s*[:=]?\s*v?(\d+\.\d+(?:\.\d+)*(?:[a-zA-Z0-9_\.\-]+)?)', content, re.MULTILINE | re.IGNORECASE)
+        if m3:
+            return m3.group(1)
+
+        # 4. Match header comment e.g. -- spacebunny.lua v1.8.2
+        m4 = re.search(r'^--\s*[\w\.\-]+\.lua\s+v?(\d+\.\d+(?:\.\d+)*(?:[a-zA-Z0-9_\.\-]+)?)', content, re.MULTILINE | re.IGNORECASE)
+        if m4:
+            return m4.group(1)
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error extracting plugin version: {exc}")
+    return None
+
+
+def get_plugin_version(filename: str) -> Optional[str]:
+    """Get the version string of a plugin.
+    Checks in order:
+    1. Remote/cached manifest (plugins_manifest.json)
+    2. Primary deployed plugin in SLSsteam plugins directory
+    3. Cached plugin in ~/.local/share/ACCELA/plugins/
+    4. Bundled plugin fallback in res/plugins/
+    """
+    # 1. Check manifest
+    try:
+        info = get_manifest_plugin_info(filename)
+        if info and info.get("version"):
+            return str(info["version"]).strip()
+        # Fallback check aliases if spacebunny
+        if filename == "spacebunny.lua":
+            info15 = get_manifest_plugin_info("spacebunny1.5.lua")
+            if info15 and info15.get("version"):
+                return str(info15["version"]).strip()
+        elif filename == "spacebunny1.5.lua":
+            infosb = get_manifest_plugin_info("spacebunny.lua")
+            if infosb and infosb.get("version"):
+                return str(infosb["version"]).strip()
+    except Exception:
+        pass
+
+    # 2. Check deployed plugin file in SLS plugins dirs
+    try:
+        target_dirs = get_sls_plugins_dirs()
+        for tdir in target_dirs:
+            p = tdir / filename
+            if p.is_file():
+                v = extract_plugin_version(p)
+                if v:
+                    return v
+            bak = tdir / f"{filename}.bak"
+            if bak.is_file():
+                v = extract_plugin_version(bak)
+                if v:
+                    return v
+            if filename in ("spacebunny.lua", "spacebunny1.5.lua"):
+                for alt_name in ("spacebunny.lua", "spacebunny1.5.lua"):
+                    alt_p = tdir / alt_name
+                    if alt_p.is_file():
+                        v = extract_plugin_version(alt_p)
+                        if v:
+                            return v
+    except Exception:
+        pass
+
+    # 3. Check persistent cache
+    try:
+        c_path = get_cached_plugin_path(filename)
+        if c_path.is_file():
+            v = extract_plugin_version(c_path)
+            if v:
+                return v
+        if filename in ("spacebunny.lua", "spacebunny1.5.lua"):
+            for alt_name in ("spacebunny.lua", "spacebunny1.5.lua"):
+                alt_c = get_cached_plugin_path(alt_name)
+                if alt_c.is_file():
+                    v = extract_plugin_version(alt_c)
+                    if v:
+                        return v
+    except Exception:
+        pass
+
+    # 4. Check bundled fallback
+    try:
+        bundled = Paths.resource(f"plugins/{filename}")
+        if bundled.is_file():
+            v = extract_plugin_version(bundled)
+            if v:
+                return v
+    except Exception:
+        pass
+
     return None
 
 
@@ -641,7 +759,7 @@ def get_default_interceptor_from_manifest() -> str:
                         return fname
     except Exception as exc:
         logger.debug(f"[PluginManager] Error resolving default interceptor from manifest: {exc}")
-    return "spacebunny1.5.lua"
+    return "spacebunny.lua"
 
 
 def deploy_all_plugins(force_download: bool = False, only_if_missing: bool = False) -> Tuple[bool, List[str]]:

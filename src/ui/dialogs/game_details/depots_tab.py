@@ -93,13 +93,14 @@ class MiniSwitchToggle(QWidget):
     """
     toggled = pyqtSignal(bool)
 
-    def __init__(self, checked: bool = False, read_only: bool = True, parent=None):
+    def __init__(self, checked: bool = False, read_only: bool = True, greyscaled: bool = False, parent=None):
         super().__init__(parent)
         self._checked = checked
-        self._read_only = read_only
+        self._read_only = read_only or greyscaled
+        self._greyscaled = greyscaled
         self._hovered = False
         self.setFixedSize(36, 18)
-        self.setCursor(Qt.CursorShape.PointingHandCursor if not read_only else Qt.CursorShape.ArrowCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor if not self._read_only else Qt.CursorShape.ArrowCursor)
 
         # Knob slide range: unchecked = 2.0 (left), checked = 20.0 (right)
         self._circle_pos = 20.0 if checked else 2.0
@@ -134,12 +135,22 @@ class MiniSwitchToggle(QWidget):
             self.toggled.emit(self._checked)
 
     def setReadOnly(self, read_only: bool) -> None:
-        self._read_only = read_only
-        self.setCursor(Qt.CursorShape.PointingHandCursor if not read_only else Qt.CursorShape.ArrowCursor)
+        self._read_only = read_only or self._greyscaled
+        self.setCursor(Qt.CursorShape.PointingHandCursor if not self._read_only else Qt.CursorShape.ArrowCursor)
         self.update()
 
     def isReadOnly(self) -> bool:
         return self._read_only
+
+    def setGreyscaled(self, greyscaled: bool) -> None:
+        self._greyscaled = greyscaled
+        if greyscaled:
+            self._read_only = True
+        self.setCursor(Qt.CursorShape.ArrowCursor if self._read_only else Qt.CursorShape.PointingHandCursor)
+        self.update()
+
+    def isGreyscaled(self) -> bool:
+        return self._greyscaled
 
     def enterEvent(self, event):
         self._hovered = True
@@ -153,7 +164,7 @@ class MiniSwitchToggle(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if not self._read_only:
+            if not self._read_only and not self._greyscaled:
                 self.setChecked(not self._checked)
             event.accept()
         else:
@@ -167,23 +178,27 @@ class MiniSwitchToggle(QWidget):
         h = self.height()
         radius = h / 2.0
 
-        # Background track: Green if checked, Red if unchecked
-        track_color = QColor("#4CAF50") if self._checked else QColor("#E53935")
-        if self._read_only:
-            track_color.setAlpha(190)
+        if self._greyscaled:
+            track_color = QColor(255, 255, 255, 30)
+            knob_color = QColor(135, 135, 135)
         else:
-            track_color.setAlpha(255)
+            # Background track: Green if checked, Red if unchecked
+            track_color = QColor("#4CAF50") if self._checked else QColor("#E53935")
+            if self._read_only:
+                track_color.setAlpha(190)
+            else:
+                track_color.setAlpha(255)
+            knob_color = QColor("#FFFFFF")
 
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(track_color))
         p.drawRoundedRect(0, 0, w, h, radius, radius)
 
-
-        # White knob circle
+        # Knob circle
         knob_d = 14.0
         knob_y = (h - knob_d) / 2.0
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor("#FFFFFF")))
+        p.setBrush(QBrush(knob_color))
         p.drawEllipse(int(self._circle_pos), int(knob_y), int(knob_d), int(knob_d))
         p.end()
 
@@ -200,7 +215,7 @@ class _ToggleContainer(QWidget):
         lay.addWidget(toggle)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and not self.toggle.isReadOnly():
+        if event.button() == Qt.MouseButton.LeftButton and not self.toggle.isReadOnly() and not self.toggle.isGreyscaled():
             self.toggle.setChecked(not self.toggle.isChecked())
             event.accept()
         else:
@@ -273,14 +288,27 @@ def _make_table(columns: List[str], accent_color: str) -> QTableWidget:
             selection-color: #FFFFFF;
         }}
         QTableWidget::item {{
+            color: #FFFFFF;
             padding: 4px 8px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.03);
             border: none;
+        }}
+        QTableWidget::item:disabled {{
+            color: rgba(255, 255, 255, 0.38);
+            background-color: transparent;
         }}
         QTableWidget::item:selected {{
             background-color: rgba(255, 255, 255, 0.06);
             border: none;
             color: #FFFFFF;
+        }}
+        QToolTip {{
+            background-color: #1e2029;
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 5px 8px;
+            font-size: 8.5pt;
         }}
         QHeaderView::section {{
             background-color: rgba(255, 255, 255, 0.04);

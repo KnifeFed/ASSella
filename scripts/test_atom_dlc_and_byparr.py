@@ -163,13 +163,17 @@ class TestAtomDlcAndByparr(unittest.TestCase):
             self.assertIn("100003", app_ids_in_table)
             self.assertEqual(len(app_ids_in_table), 3)
 
-            # Owned DLC 100001 toggle must be disabled/read-only
+            # Owned DLC 100001 toggle must be disabled/read-only and greyscaled
             toggle_100001 = dlg.app_toggles["100001"]
             self.assertFalse(toggle_100001.isEnabled())
+            self.assertTrue(toggle_100001.isGreyscaled())
+            self.assertIn("(Owned)", dlg.apps_table.item(0, 1).text())
+            self.assertTrue(dlg.apps_table.item(0, 1).font().italic())
 
-            # Unowned DLC 100002 & 100003 must be enabled
+            # Unowned DLC 100002 & 100003 must be enabled and not greyscaled
             toggle_100002 = dlg.app_toggles["100002"]
             self.assertTrue(toggle_100002.isEnabled())
+            self.assertFalse(toggle_100002.isGreyscaled())
 
             # 2. Bulk bar should be hidden because count is < 5 (3 items)
             self.assertFalse(dlg.apps_bulk_bar.isVisible())
@@ -182,18 +186,27 @@ class TestAtomDlcAndByparr(unittest.TestCase):
             self.assertIn("200002", depot_ids_in_table)
             self.assertIn("200003", depot_ids_in_table)
 
-            # 200001 owned depot toggle should be disabled/locked
+            # 200001 owned depot toggle should be disabled/locked and greyscaled
             toggle_200001 = dlg.depot_toggles["200001"]
             self.assertFalse(toggle_200001.isEnabled())
+            self.assertTrue(toggle_200001.isGreyscaled())
+            self.assertIn("(Owned)", dlg.depots_table.item(0, 1).text())
+            self.assertTrue(dlg.depots_table.item(0, 1).font().italic())
 
             # 200002 toggle should be disabled (missing key)
             toggle_200002 = dlg.depot_toggles["200002"]
             self.assertFalse(toggle_200002.isEnabled())
+            self.assertFalse(toggle_200002.isGreyscaled())
 
             # 200003 toggle should be enabled and checked
             toggle_200003 = dlg.depot_toggles["200003"]
             self.assertTrue(toggle_200003.isEnabled())
             self.assertTrue(toggle_200003.isChecked())
+            self.assertFalse(toggle_200003.isGreyscaled())
+
+            # Window dimensions match GameDetailsDialogV2
+            self.assertEqual(dlg.width(), 620)
+            self.assertEqual(dlg.height(), 500)
 
             print("  [PASS] AtomDlcSelectionDialog structure, owned DLC greyscaling, and toggle state verified")
 
@@ -247,6 +260,35 @@ class TestAtomDlcAndByparr(unittest.TestCase):
             self.assertEqual(mode, "assella")
 
         print("  [PASS] DLC mode memory detection verified")
+
+    def test_05_plugin_version_extraction_and_display(self):
+        """Verify extract_plugin_version and get_plugin_version resolution."""
+        from utils.plugin_manager import extract_plugin_version, get_plugin_version
+
+        # 1. Version extraction from content
+        lua_sb = """-- spacebunny.lua (1.8.2)
+SpaceBunny = {
+    VERSION = "1.8.2"
+}
+"""
+        self.assertEqual(extract_plugin_version(lua_sb), "1.8.2")
+
+        lua_lobster = """-- lobster.lua
+Lobster = {
+    VERSION = "1.2.0"
+}
+"""
+        self.assertEqual(extract_plugin_version(lua_lobster), "1.2.0")
+
+        # 2. Version resolution for standard plugins
+        sb_ver = get_plugin_version("spacebunny.lua")
+        self.assertIsNotNone(sb_ver)
+        self.assertTrue(len(sb_ver) > 0)
+
+        lob_ver = get_plugin_version("lobster.lua")
+        self.assertIsNotNone(lob_ver)
+
+        print(f"  [PASS] Plugin version resolution verified (SpaceBunny: {sb_ver}, Lobster: {lob_ver})")
 
 
 if __name__ == "__main__":

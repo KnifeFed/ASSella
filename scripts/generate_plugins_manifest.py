@@ -28,13 +28,13 @@ def extract_plugin_version(file_path: Path) -> str | None:
     """Try to extract version string from Lua file header or VERSION variable."""
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
-        # Match table.VERSION = "1.8.1..."
-        m = re.search(r'\b(?:SpaceBunny|HubcapResolver|Lobster|\w+)\.VERSION\s*=\s*["\']([^"\']+)["\']', content)
+        # Match table.VERSION = "1.8.2..." or standalone/table-member VERSION = "1.2.0..."
+        m = re.search(r'\b(?:(?:SpaceBunny|HubcapResolver|Lobster|\w+)\.)?VERSION\s*=\s*["\']([^"\']+)["\']', content)
         if m:
             sem = re.search(r'(\d+\.\d+(?:\.\d+)?(?:[a-zA-Z0-9_\.\-]+)?)', m.group(1))
             if sem:
                 return sem.group(1)
-        # Match header line comment e.g. -- spacebunny.lua (1.8.1)
+        # Match header line comment e.g. -- spacebunny.lua (1.8.2)
         m2 = re.search(r'^--\s*[\w\.\-]+\.lua\s*\((v?\d+(?:\.\d+)*(?:[a-zA-Z0-9_\.\-]+)?)\)', content, re.MULTILINE)
         if m2:
             return m2.group(1).lstrip("v")
@@ -53,20 +53,23 @@ DEFAULT_DESCRIPTIONS = {
         "version": "1.0.1",
         "category": "interceptor",
         "required": False,
+        "is_default": False,
     },
     "spacebunny.lua": {
         "name": "SpaceBunny",
         "description": "Standardized SLSsteam download interceptor with multi-provider MRC authority & circuit breakers.",
-        "version": "1.8.1",
+        "version": "1.8.2",
         "category": "interceptor",
         "required": True,
+        "is_default": True,
     },
     "spacebunny1.5.lua": {
         "name": "SpaceBunny (Legacy)",
-        "description": "Legacy alias pointing to SpaceBunny 1.8.1.",
-        "version": "1.8.1",
+        "description": "Legacy alias pointing to SpaceBunny 1.8.2.",
+        "version": "1.8.2",
         "category": "interceptor",
         "required": False,
+        "is_default": False,
     },
     "spliced-tickets.lua": {
         "name": "Spliced Tickets",
@@ -78,7 +81,7 @@ DEFAULT_DESCRIPTIONS = {
     "lobster.lua": {
         "name": "Lobster",
         "description": "SLSsteam config recovery plugin: restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates.",
-        "version": "1.0.0",
+        "version": "1.2.0",
         "category": "companion",
         "required": True,
     },
@@ -157,7 +160,7 @@ def generate_manifest(plugins_dir: Path, output_file: Path, force_bump: bool = F
         else:
             new_version = old_version or base_version
 
-        plugins[fname] = {
+        plugin_entry = {
             "name": meta["name"],
             "filename": fname,
             "version": new_version,
@@ -167,6 +170,10 @@ def generate_manifest(plugins_dir: Path, output_file: Path, force_bump: bool = F
             "size_bytes": curr_size,
             "required": meta["required"],
         }
+        if "is_default" in meta:
+            plugin_entry["is_default"] = meta["is_default"]
+
+        plugins[fname] = plugin_entry
 
     manifest = {
         "manifest_version": 1,
