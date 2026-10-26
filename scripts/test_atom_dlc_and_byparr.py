@@ -59,10 +59,29 @@ class TestAtomDlcAndByparr(unittest.TestCase):
         self.settings = get_settings()
         self.orig_byparr_url = self.settings.value("byparr_url", "", type=str)
         self.orig_byparr_auth = self.settings.value("byparr_auth_header", "", type=str)
+        self.orig_library_mode = self.settings.value("library_mode", None)
+        self.settings.setValue("library_mode", True)
+
+        self.cfg_path = get_user_config_path()
+        self.created_cfg = False
+        if not self.cfg_path.exists():
+            self.cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cfg_path.write_text("Plugins: yes\nAdditionalApps: {}\nAdditionalDepots: {}\nDecryptionKeys: {}\nAppTokens: {}\n")
+            self.created_cfg = True
 
     def tearDown(self):
         self.settings.setValue("byparr_url", self.orig_byparr_url)
         self.settings.setValue("byparr_auth_header", self.orig_byparr_auth)
+        if self.orig_library_mode is None:
+            self.settings.remove("library_mode")
+        else:
+            self.settings.setValue("library_mode", self.orig_library_mode)
+
+        if self.created_cfg and self.cfg_path.exists():
+            try:
+                self.cfg_path.unlink()
+            except Exception:
+                pass
 
     def test_01_byparr_custom_configuration(self):
         """Verify Byparr custom service detection and header builder."""
@@ -418,6 +437,75 @@ Lobster = {
         self.assertIsInstance(ok, bool)
         self.assertIsInstance(provider, str)
         print(f"  [PASS] SteamDB fast-path and dual parser verified (Live status: ok={ok}, provider={provider})")
+
+    def test_08_atom_manifest_fix_dialog_and_dlc_token_scope(self):
+        """Verify AtomManifestFixDialog choices and DLC AppToken scoping."""
+        from ui.dialogs.atom_manifest_fix_dialog import (
+            AtomManifestFixDialog,
+            ACTION_DELETE_ACF,
+            ACTION_MARK_UPDATE,
+            ACTION_CANCEL,
+        )
+        # 1. Dialog choices
+        dlg = AtomManifestFixDialog(
+            parent=None,
+            game_name="DAVE THE DIVER",
+            appid="1868140",
+            acf_path="/tmp/fake/appmanifest_1868140.acf",
+        )
+        self.assertEqual(dlg.choice, ACTION_CANCEL)
+        dlg._on_delete_acf()
+        self.assertEqual(dlg.choice, ACTION_DELETE_ACF)
+        dlg._on_mark_update()
+        self.assertEqual(dlg.choice, ACTION_MARK_UPDATE)
+        dlg.deleteLater()
+
+        # 2. DLC AppToken scoping in register_plugin_game
+        from utils.plugin_games import register_plugin_game, unregister_plugin_game
+        from utils.yaml_config_manager import get_app_tokens, get_user_config_path
+
+        test_base_aid = "9999990"
+        test_dlc_aid = "9999991"
+        test_dlc_depot = "9999992"
+        test_unselected_dlc = "9999999"
+
+        # Provide tokens for base, selected DLC, selected DLC depot, and unselected DLC
+        tokens_map = {
+            test_base_aid: "TOKEN_BASE_GAME_SECRET",
+            test_dlc_aid: "TOKEN_DLC_SECRET",
+            test_dlc_depot: "TOKEN_DEPOT_SECRET",
+            test_unselected_dlc: "TOKEN_UNSELECTED_SECRET",
+        }
+
+        try:
+            ok = register_plugin_game(
+                appid=test_base_aid,
+                name="SYNTHETIC DLC TEST",
+                depot_ids=[test_dlc_aid, test_dlc_depot],
+                decryption_keys={
+                    test_dlc_aid: "a" * 64,
+                    test_dlc_depot: "b" * 64,
+                },
+                installdir="SyntheticGame",
+                is_dlc_only=True,
+                dlc_appids=[test_dlc_aid],
+                app_tokens=tokens_map,
+            )
+            self.assertTrue(ok)
+
+            cfg_path = get_user_config_path()
+            cfg_tokens = get_app_tokens(cfg_path)
+            # Base AppID token must NEVER enter AppTokens in DLC-only mode
+            self.assertNotIn(test_base_aid, cfg_tokens, "CRITICAL: Base game token leaked into AppTokens in DLC-only mode!")
+            # Unselected DLC token must not enter AppTokens
+            self.assertNotIn(test_unselected_dlc, cfg_tokens, "Unselected DLC token found in AppTokens!")
+            # Selected DLC token and selected depot token must be present
+            self.assertEqual(cfg_tokens.get(test_dlc_aid), "TOKEN_DLC_SECRET")
+            self.assertEqual(cfg_tokens.get(test_dlc_depot), "TOKEN_DEPOT_SECRET")
+        finally:
+            unregister_plugin_game(test_base_aid)
+
+        print("  [PASS] AtomManifestFixDialog and DLC AppToken scoping verified")
 
 
 if __name__ == "__main__":

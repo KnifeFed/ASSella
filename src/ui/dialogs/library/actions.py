@@ -1947,21 +1947,58 @@ class LibraryActionsMixin:
             or is_plugin_game(appid)
         )
 
-        # AT0M mode: set StateFlags to 6 in ACF so Steam treats update as available
+        # AT0-M mode with existing manifest: prompt user with options:
+        # Top: Delete Manifest (.acf) [Recommended]
+        # Bottom: Mark Update Only (StateFlags=6)
         if acf_existed and is_at0m:
-            from utils.steam_acf import set_acf_state_flags
+            from ui.dialogs.atom_manifest_fix_dialog import (
+                AtomManifestFixDialog,
+                ACTION_DELETE_ACF,
+                ACTION_MARK_UPDATE,
+            )
+            dlg = AtomManifestFixDialog(
+                self,
+                game_name=game_data.get("game_name", appid),
+                appid=appid,
+                acf_path=acf,
+            )
+            if not dlg.exec() or dlg.choice not in (ACTION_DELETE_ACF, ACTION_MARK_UPDATE):
+                return
 
-            ok = set_acf_state_flags(acf, 6)
-            if ok:
-                logger.info(f"[Library] Set StateFlags=6 on ACF {acf} for {appid} (AT0M mode)")
-                ThemedMessageBox.information(
-                    self,
-                    "Installation Set to Update",
-                    f"Set state to update required (StateFlags=6) for {game_data.get('game_name', appid)}.\n\n"
-                    "Steam will now show an update available to verify and adopt existing files."
-                )
-            else:
-                logger.warning(f"Could not set StateFlags on manifest file {acf}")
+            if dlg.choice == ACTION_DELETE_ACF:
+                try:
+                    os.remove(acf)
+                    logger.info(f"[Library] Deleted ACF manifest {acf} for {appid} (AT0-M mode)")
+                    ThemedMessageBox.information(
+                        self,
+                        "Manifest Removed",
+                        f"Deleted {os.path.basename(acf)}.\n\n"
+                        "Please restart Steam now so Steam client can cleanly discover and adopt the installed files."
+                    )
+                    if hasattr(self, "game_manager") and self.game_manager:
+                        try:
+                            self.game_manager.scan_steam_libraries_async()
+                        except Exception as e:
+                            logger.debug(f"[Library] Steam library rescan request failed: {e}")
+                except Exception as e:
+                    logger.warning(f"Could not remove manifest file {acf}: {e}")
+                    ThemedMessageBox.critical(self, "Error", f"Could not remove manifest file {acf}:\n{e}")
+                return
+
+            elif dlg.choice == ACTION_MARK_UPDATE:
+                from utils.steam_acf import set_acf_state_flags
+                ok = set_acf_state_flags(acf, 6)
+                if ok:
+                    logger.info(f"[Library] Set StateFlags=6 on ACF {acf} for {appid} (AT0-M mode)")
+                    ThemedMessageBox.information(
+                        self,
+                        "Installation Set to Update",
+                        f"Set state to update required (StateFlags=6) for {game_data.get('game_name', appid)}.\n\n"
+                        "Steam will now show an update available to verify and adopt existing files. Please restart Steam."
+                    )
+                else:
+                    logger.warning(f"Could not set StateFlags on manifest file {acf}")
+                return
         # First try: repair the ACF in-place if it exists and is broken (ASSella mode)
         elif acf_existed:
             try:

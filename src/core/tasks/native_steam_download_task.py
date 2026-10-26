@@ -917,18 +917,26 @@ class NativeSteamDownloadTask(QObject):
                     re.MULTILINE,
                 )
                 content, _ = _remove_entry_in_memory(content, "AppTokens", pattern_tok)
-            if dlc_appids:
-                try:
-                    from managers.depot_key_manager import DepotKeyManager
-                    dkm = DepotKeyManager.get_instance()
+            try:
+                from managers.depot_key_manager import DepotKeyManager
+                dkm = DepotKeyManager.get_instance()
+                if dlc_appids:
                     for dlc_id in dlc_appids:
                         dlc_tok = dkm.get_app_token(dlc_id)
                         if dlc_tok:
                             content, _ = _add_map_item_in_memory(
                                 content, "AppTokens", dlc_id, str(dlc_tok).strip(), f"[DLC] {game_name} ({dlc_id})"
                             )
-                except Exception as e:
-                    logger.debug(f"[NativeSteamDL] Could not query DepotKeyManager for DLC tokens: {e}")
+                for did in (new_depot_ids or []):
+                    did_str = str(did).strip()
+                    if did_str != appid_str and (not dlc_appids or did_str not in dlc_appids):
+                        depot_tok = dkm.get_app_token(did_str)
+                        if depot_tok:
+                            content, _ = _add_map_item_in_memory(
+                                content, "AppTokens", did_str, str(depot_tok).strip(), f"[DLC Depot] {game_name} ({did_str})"
+                            )
+            except Exception as e:
+                logger.debug(f"[NativeSteamDL] Could not query DepotKeyManager for DLC tokens: {e}")
 
         # 5. Write atomically in a single pass to avoid multiple reload notifications
         if not _atomic_write(config_path, content):

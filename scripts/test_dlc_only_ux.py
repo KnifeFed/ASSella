@@ -60,12 +60,35 @@ class TestDLCOnlyUX(unittest.TestCase):
         self.orig_cfg_content = self.cfg_path.read_text(encoding="utf-8") if self.cfg_path.exists() else None
         self.orig_inode = self.cfg_path.stat().st_ino if self.cfg_path.exists() else None
         self.orig_dlc_setting = self.settings.value("at0m_default_dlc_action", "ask", type=str)
+        self.orig_library_mode = self.settings.value("library_mode", False, type=bool)
+        self.settings.setValue("library_mode", True)
+        self.cfg_was_created = False
+        if not self.cfg_path.exists():
+            self.cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            minimal_config = (
+                "Plugins: yes\n"
+                "DisableFamilyShareLock: yes\n"
+                "UseWhitelist: no\n"
+                "AppIds:\n"
+                "AdditionalApps:\n"
+                "AdditionalDepots:\n"
+                "DecryptionKeys:\n"
+                "AppTokens:\n"
+            )
+            self.cfg_path.write_text(minimal_config, encoding="utf-8")
+            self.cfg_was_created = True
+
+        if self.orig_inode is None and self.cfg_path.exists():
+            self.orig_inode = self.cfg_path.stat().st_ino
 
     def tearDown(self):
         # Restore settings
         self.settings.setValue("at0m_default_dlc_action", self.orig_dlc_setting)
+        self.settings.setValue("library_mode", self.orig_library_mode)
         # Restore config.yaml
-        if self.orig_cfg_content is not None and self.cfg_path.exists():
+        if getattr(self, "cfg_was_created", False):
+            self.cfg_path.unlink(missing_ok=True)
+        elif self.orig_cfg_content is not None and self.cfg_path.exists():
             from utils.yaml.core import _atomic_write
             _atomic_write(self.cfg_path, self.orig_cfg_content)
 

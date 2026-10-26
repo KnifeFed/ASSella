@@ -275,7 +275,20 @@ def register_plugin_game(
             except Exception as e:
                 logger.debug(f"[PluginGames] Could not query DepotKeyManager for DLC token {dlc_id}: {e}")
 
+    # Query depot tokens in DepotKeyManager for selected depots
+    for did in clean_depots:
+        if did not in tokens_to_inject and did != appid_str:
+            try:
+                from managers.depot_key_manager import DepotKeyManager
+                depot_tok = DepotKeyManager.get_instance().get_app_token(did)
+                if depot_tok:
+                    tokens_to_inject[did] = str(depot_tok).strip()
+            except Exception as e:
+                logger.debug(f"[PluginGames] Could not query DepotKeyManager for depot token {did}: {e}")
+
     if is_dlc_only:
+        allowed_token_ids = set(clean_dlc_appids) | set(clean_depots)
+        tokens_to_inject = {aid: tok for aid, tok in tokens_to_inject.items() if aid in allowed_token_ids}
         tokens_to_inject.pop(appid_str, None)
 
     lib = load_plugin_library()
@@ -530,6 +543,8 @@ def unregister_plugin_game(appid: Union[str, int], keep_in_additional_apps: bool
                     editor.remove_fake_app_id(dlc_id)
                     editor.remove_app_token(dlc_id)
                     editor.remove_launch_option(dlc_id)
+                for did in target_game.get("depot_ids", []):
+                    editor.remove_app_token(did)
 
                 # 1d. Remove secondary sections (GameTitles, ManifestIds, CDKeys, etc.)
                 for sec in (
