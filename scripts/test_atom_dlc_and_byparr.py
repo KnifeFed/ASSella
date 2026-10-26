@@ -385,6 +385,28 @@ Lobster = {
         self.assertEqual(parsed_static[0]["buildid"], "888777")
         self.assertEqual(parsed_static[0]["title"], "public - Public Release Branch")
 
+        # Test Parser 3: SteamDB XML RSS Feed
+        mock_rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+            <channel>
+                <title>Test Game - SteamDB RSS</title>
+                <item>
+                    <title>Test Game Update 1.5</title>
+                    <link>https://steamdb.info/patchnotes/777666/?utm_source=RSS</link>
+                    <guid isPermaLink="false">build#777666</guid>
+                    <pubDate>Mon, 26 Oct 2026 15:30:00 +0000</pubDate>
+                </item>
+            </channel>
+        </rss>
+        """
+        parsed_rss = scraper._parse_patchnotes_rss(mock_rss_xml)
+        self.assertEqual(len(parsed_rss), 1)
+        self.assertEqual(parsed_rss[0]["buildid"], "777666")
+        self.assertEqual(parsed_rss[0]["title"], "Test Game Update 1.5")
+        self.assertEqual(parsed_rss[0]["date"], "26 October 2026")
+        self.assertEqual(parsed_rss[0]["day"], "Mon")
+        self.assertEqual(parsed_rss[0]["time"], "15:30")
+
         # Test verify_steamdb_status callable
         ok, provider = verify_steamdb_status(timeout_seconds=3)
         self.assertIsInstance(ok, bool)

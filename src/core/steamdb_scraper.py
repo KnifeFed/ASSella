@@ -20,6 +20,8 @@ import sys
 import time
 import logging
 import concurrent.futures
+import email.utils
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -703,20 +705,88 @@ class SteamDBScraper:
 
         return results
 
-    def get_patchnotes(self, appid: int, limit: int = 40) -> List[Dict[str, Any]]:
+    def _parse_patchnotes_rss(self, xml_text: str, limit: int = 40) -> List[Dict[str, Any]]:
         """
-        Scrapes https://steamdb.info/app/<appid>/patchnotes/
+        Parses official SteamDB XML RSS feed (https://steamdb.info/api/PatchnotesRSS/?appid=<appid>).
         Returns list of patch dictionaries:
         [{date, day, time, title, buildid, patchnotes_url}]
         """
-        url = f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/"
-        html = self.fetch_rendered_html(url)
-        if not html:
+        if not xml_text:
+            return []
+        try:
+            root = ET.fromstring(xml_text)
+        except Exception as e:
+            logger.debug(f"[SteamDB] Failed to parse RSS XML: {e}")
             return []
 
-        results = self._parse_patchnotes_html(html, limit=limit)
+        results = []
+        for item in root.findall(".//item"):
+            guid = (item.findtext("guid") or "").strip()
+            # guid is formatted like 'build#12345678'
+            m = re.search(r"\d+", guid)
+            build_id = m.group(0) if m else ""
 
-        # Dual parser fallback: if fast-path static HTML didn't yield builds, but Byparr is available, try Byparr once
+            link = (item.findtext("link") or "").strip()
+            if not build_id and link:
+                m_link = re.search(r"/patchnotes/(\d+)", link)
+                if m_link:
+                    build_id = m_link.group(1)
+
+            if not build_id:
+                continue
+
+            title = (item.findtext("title") or "").strip()
+            pub_date = (item.findtext("pubDate") or "").strip()
+            date_str = ""
+            day_str = ""
+            time_str = ""
+            if pub_date:
+                try:
+                    dt = email.utils.parsedate_to_datetime(pub_date)
+                    date_str = dt.strftime("%d %B %Y")
+                    day_str = dt.strftime("%a")
+                    time_str = dt.strftime("%H:%M")
+                except Exception:
+                    date_str = pub_date
+
+            patch_url = f"{STEAMDB_BASE_URL}/patchnotes/{build_id}/"
+
+            results.append({
+                "date": date_str,
+                "day": day_str,
+                "time": time_str,
+                "title": title or f"Update (Build {build_id})",
+                "buildid": build_id,
+                "patchnotes_url": patch_url,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def get_patchnotes(self, appid: int, limit: int = 40) -> List[Dict[str, Any]]:
+        """
+        Scrapes patchnotes for an app.
+        First tries SteamDB's official RSS feed (https://steamdb.info/api/PatchnotesRSS/?appid=<appid>)
+        which provides fast, clean, unthrottled build history without client-side JS rendering.
+        Falls back to https://steamdb.info/app/<appid>/patchnotes/ (HTML),
+        and falls back to Byparr if fast-path yields no builds and Byparr is available.
+        """
+        # 1. Try official RSS feed first
+        rss_url = f"{STEAMDB_BASE_URL}/api/PatchnotesRSS/?appid={appid}"
+        xml_data = self.fetch_rendered_html(rss_url)
+        results = self._parse_patchnotes_rss(xml_data, limit=limit)
+        if results:
+            logger.info(f"[SteamDB] Parsed {len(results)} patchnotes entries from RSS for App {appid}")
+            return results
+
+        # 2. Fall back to static / JS HTML page
+        url = f"{STEAMDB_BASE_URL}/app/{appid}/patchnotes/"
+        html = self.fetch_rendered_html(url)
+        if html:
+            results = self._parse_patchnotes_html(html, limit=limit)
+
+        # 3. Dual parser fallback: if fast-path static HTML didn't yield builds, but Byparr is available, try Byparr once
         if not results and ByparrManager.is_available():
             logger.info(f"[SteamDB] Fast-path HTML did not yield patchnotes for App {appid}. Falling back to Byparr...")
             byparr_html = self.fetch_via_byparr(url, timeout_seconds=60)
