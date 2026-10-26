@@ -884,12 +884,14 @@ class LibraryActionsMixin:
         )
         from ui.dialogs.themed_progress_dialog import ThemedProgressDialog
 
-        if not are_plugins_present() and not is_plugin_check_bypassed():
+        from utils.plugin_games import can_use_atom_mode
+        can_use, reason = can_use_atom_mode()
+        if not can_use:
             ThemedMessageBox.warning(
                 self._dialog_parent(),
-                "AT0-M Plugins Required",
-                "AT0-M mode requires SLSsteam plugins (download interceptor and spliced-tickets.lua).\n\n"
-                "Please go to Settings -> AT0-M and enable/deploy plugin support before moving games to AT0-M.",
+                "AT0-M Mode Unavailable",
+                f"AT0-M mode cannot be used yet:\n\n{reason}\n\n"
+                "Please configure SLSsteam and deploy plugin support in Settings -> AT0-M.",
             )
             return
 

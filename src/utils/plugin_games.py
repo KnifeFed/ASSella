@@ -1200,14 +1200,26 @@ def migrate_game_to_atom(
         )
 
 
-    # 3. Guard against unkeyed depots (prevent DepotWithoutKey)
+    # 3. Guard against unkeyed depots (prevent DepotWithoutKey / partial migration)
     valid_keys_and_redists = set(decryption_keys.keys()) | SHARED_REDISTS
     excluded_unkeyed = [d for d in depot_ids if d not in valid_keys_and_redists]
     if excluded_unkeyed:
-        logger.warning(
-            f"[PluginGames] Excluded {len(excluded_unkeyed)} unkeyed depot(s) for {appid_str}: {excluded_unkeyed}"
+        logger.error(
+            f"[PluginGames] Cannot migrate '{game_name}' ({appid_str}) to AT0-M: "
+            f"Missing decryption keys for {len(excluded_unkeyed)} depot(s): {excluded_unkeyed}. "
+            "Migration aborted to prevent partial installation."
         )
-        depot_ids = [d for d in depot_ids if d in valid_keys_and_redists]
+        err_msg = (
+            "No valid decryption keys found"
+            if not decryption_keys
+            else f"Missing decryption keys for depot(s): {', '.join(excluded_unkeyed)}"
+        )
+        return {
+            "success": False,
+            "error": err_msg,
+            "appid": appid_str,
+            "name": game_name,
+        }
 
     if not depot_ids and not dlc_appids:
         logger.warning(
