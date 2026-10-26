@@ -132,10 +132,9 @@ EOL
     test ! -L "$PRIMARY_DESKTOP_ENTRY"
     grep -q '^Exec=' "$PRIMARY_DESKTOP_ENTRY"
 
-    # Always recreate the legacy name as a one-way alias.  rm also handles a
-    # broken symlink, unlike tests based only on -f.
+    # Clean up any legacy accela.desktop entry or symlink so application launchers
+    # do not display duplicate ASSella entries (issue #31).
     rm -f "$LEGACY_DESKTOP_ENTRY"
-    ln -s "assella.desktop" "$LEGACY_DESKTOP_ENTRY"
 }
 
 install_application_icon() {
