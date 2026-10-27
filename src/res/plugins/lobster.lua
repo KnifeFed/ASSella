@@ -11,14 +11,17 @@
 --     enabled    = true,   -- master switch
 --     notify     = true,   -- desktop notification on recovery
 --     auto_recover = true, -- false = log only, don't write
+--     run_on_reload = false, -- false = only run once on Steam boot
 --   }
 -- =========================================================================
 
 Lobster = Lobster or {
 	setup = false,
+	VERSION = "1.2.0",
 	enabled = true,
 	notify = true,
 	auto_recover = true,
+	run_on_reload = false,  -- false = only run once on Steam boot
 	config_path = nil,   -- nil = ~/.config/SLSsteam/config.yaml
 }
 
@@ -26,6 +29,21 @@ if Lobster.setup then
 	return
 end
 Lobster.setup = true
+
+-- =========================================================================
+-- Changelog
+-- =========================================================================
+-- v1.2.0
+--   - Added run_on_reload config option (default: false)
+--   - Plugin now only runs once per Steam boot by default
+--   - Set run_on_reload=true to check on every config reload
+--
+-- v1.1.0
+--   - Added config_path option for testing
+--
+-- v1.0.0
+--   - Initial release
+-- =========================================================================
 
 -- =========================================================================
 -- Config loading
@@ -68,13 +86,17 @@ local function loadConfig()
 	if type(cfg.auto_recover) == "boolean" then
 		Lobster.auto_recover = cfg.auto_recover
 	end
+	if type(cfg.run_on_reload) == "boolean" then
+		Lobster.run_on_reload = cfg.run_on_reload
+	end
 	if type(cfg.config_path) == "string" and cfg.config_path ~= "" then
 		Lobster.config_path = cfg.config_path
 	end
 	lobsterLog("info", "lobster.conf.lua loaded: enabled="
 		.. tostring(Lobster.enabled)
 		.. " notify=" .. tostring(Lobster.notify)
-		.. " auto_recover=" .. tostring(Lobster.auto_recover))
+		.. " auto_recover=" .. tostring(Lobster.auto_recover)
+		.. " run_on_reload=" .. tostring(Lobster.run_on_reload))
 end
 
 -- =========================================================================
@@ -405,14 +427,15 @@ loadConfig()
 
 if Lobster.enabled then
 	-- Run immediately on load (config may already be loaded by this point)
-	-- and also register for configLoaded in case SLSsteam re-reads config.
 	runRecovery()
 
-	SLS.registerCallback("SLSsteam::configLoaded", function()
-		runRecovery()
-	end)
+	if Lobster.run_on_reload then
+		SLS.registerCallback("SLSsteam::configLoaded", function()
+			runRecovery()
+		end)
+	end
 
-	lobsterLog("info", "lobster.lua loaded and active")
+	lobsterLog("info", "lobster.lua v" .. Lobster.VERSION .. " loaded and active")
 else
-	lobsterLog("info", "lobster.lua loaded but disabled (set enabled=true in lobster.conf.lua)")
+	lobsterLog("info", "lobster.lua v" .. Lobster.VERSION .. " loaded but disabled (set enabled=true in lobster.conf.lua)")
 end

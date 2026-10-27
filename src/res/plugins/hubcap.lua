@@ -1,12 +1,12 @@
 -- hubcap.lua (1.0.0)
 --
--- Standalone Hubcap auto-fetch plugin for SLSsteam.
+-- Optional Hubcap resolver companion for SLSsteam.
 -- Resolves missing depot decryption keys by fetching Lua manifests
 -- from the Hubcap API and writing keys back into config.yaml.
 --
--- Designed to be loaded independently of SpaceBunny. SpaceBunny 1.8.1+
--- detects this plugin and delegates key resolution to it via the
--- HubcapResolver global table.
+-- This file installs no Steam hooks and is inert by itself. SpaceBunny
+-- 1.8.1+ detects the HubcapResolver global and calls resolveDepotKey
+-- when a key is missing. SpaceBunny remains the download interceptor.
 --
 -- Config: ~/.config/SLSsteam/spacebunny.conf.lua (shared with SpaceBunny)
 --   hubcap = {

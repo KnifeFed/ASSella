@@ -307,7 +307,20 @@ Lobster = {
         lob_ver = get_plugin_version("lobster.lua")
         self.assertIsNotNone(lob_ver)
 
-        print(f"  [PASS] Plugin version resolution verified (SpaceBunny: {sb_ver}, Lobster: {lob_ver})")
+        # 3. Redundant legacy plugin archiving (spacebunny1.5.lua -> .bak)
+        import tempfile
+        from utils.plugin_manager import archive_redundant_legacy_plugins
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdir = Path(tmpdir)
+            sb15 = pdir / "spacebunny1.5.lua"
+            sb15.write_text("-- legacy spacebunny 1.5")
+            with patch("utils.plugin_manager.get_sls_plugins_dirs", return_value=[pdir]):
+                archived = archive_redundant_legacy_plugins(auto_deploy_replacement=False)
+                self.assertEqual(len(archived), 1)
+                self.assertFalse(sb15.exists())
+                self.assertTrue((pdir / "spacebunny1.5.lua.bak").exists())
+
+        print(f"  [PASS] Plugin version resolution and legacy archiving verified (SpaceBunny: {sb_ver}, Lobster: {lob_ver})")
 
     def test_06_platform_mismatch_and_dlc_badge(self):
         """Verify PlatformMismatchDialog styling/text and single DLC Only badge in GameListWidget."""

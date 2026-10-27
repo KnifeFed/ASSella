@@ -144,7 +144,7 @@ def get_available_download_plugins() -> list[tuple[str, str]]:
     sb_label = f"{sb_title} (Default)" if is_sb_default else sb_title
     std_label = f"{std_title} (download.lua) (Default)" if def_interceptor == "download.lua" else f"{std_title} (download.lua)"
 
-    sb_filename = "spacebunny.lua" if (def_interceptor == "spacebunny.lua" or get_manifest_plugin_info("spacebunny.lua")) else "spacebunny1.5.lua"
+    sb_filename = "spacebunny.lua" if (def_interceptor == "spacebunny.lua" or get_manifest_plugin_info("spacebunny.lua") or not get_manifest_plugin_info("spacebunny1.5.lua")) else "spacebunny1.5.lua"
     options = [
         (sb_label, sb_filename),
         (std_label, "download.lua"),
@@ -540,15 +540,15 @@ def create_at0m_tab(dialog) -> QWidget:
 
     def _refresh_deploy_ui():
         from utils.plugin_manager import (
+            archive_redundant_legacy_plugins,
             get_default_interceptor_from_manifest,
             get_plugin_version,
             is_plugin_user_disabled,
         )
+        archive_redundant_legacy_plugins(auto_deploy_replacement=False)
         is_custom = dialog.settings.value("custom_plugins_advanced", False, type=bool)
         std_state = get_plugin_state("download.lua")
         space_state = get_plugin_state("spacebunny.lua")
-        if space_state == "missing":
-            space_state = get_plugin_state("spacebunny1.5.lua")
         spliced_state = get_plugin_state("spliced-tickets.lua")
         active_dl = get_active_download_plugin()
         active_lower = (active_dl or "").lower()
@@ -817,7 +817,7 @@ def create_at0m_tab(dialog) -> QWidget:
     def _on_spacebunny_clicked():
         from utils.plugin_manager import get_manifest_plugin_info, get_default_interceptor_from_manifest
         def_name = get_default_interceptor_from_manifest()
-        sb_target = "spacebunny.lua" if (get_manifest_plugin_info("spacebunny.lua") or def_name == "spacebunny.lua") else "spacebunny1.5.lua"
+        sb_target = "spacebunny.lua" if (get_manifest_plugin_info("spacebunny.lua") or def_name == "spacebunny.lua" or not get_manifest_plugin_info("spacebunny1.5.lua")) else "spacebunny1.5.lua"
         _deploy_single(sb_target, "SpaceBunny", dialog.btn_spacebunny_plugin)
 
     def _on_spliced_tickets_clicked():

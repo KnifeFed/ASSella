@@ -2487,13 +2487,22 @@ def on_move_to_vapor_clicked(dialog) -> None:
     game_data["source"] = "at0-m"
     game_data["update_status"] = "at0m"
 
-    ThemedMessageBox.information(
-        dialog,
-        "Moved to AT0-M",
+    info_msg = (
         f"'{game_name}' has been successfully moved to AT0-M (Steam Native) mode.\n"
         f"Registered {res.get('depots_count', 0)} depot(s) and {res.get('keys_count', 0)} decryption key(s) into SLSsteam.\n\n"
         "Please restart Steam now so Steam client can adopt the game files and update your library.\n\n"
-        "After restarting, select your desired branch (Public/Beta/etc.) in Steam's library view.",
+        "After restarting, select your desired branch (Public/Beta/etc.) in Steam's library view."
+    )
+    if res.get("excluded_depots"):
+        info_msg += (
+            f"\n\nNote: Depot(s) {', '.join(str(d) for d in res['excluded_depots'])} lacked decryption keys "
+            "and were excluded from AdditionalDepots to prevent Steam download errors."
+        )
+
+    ThemedMessageBox.information(
+        dialog,
+        "Moved to AT0-M",
+        info_msg,
     )
 
     # Close dialog and refresh parent
