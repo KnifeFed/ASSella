@@ -99,11 +99,16 @@ class AtomMigrationComplicationsDialog(QDialog):
         if dlc_only:
             content_layout.addWidget(self._create_dlc_card(dlc_only))
 
-        # 3. EOS Proxy Card
+        # 3. Missing Decryption Keys Card
+        unkeyed = self.complications.get("unkeyed")
+        if unkeyed:
+            content_layout.addWidget(self._create_unkeyed_card(unkeyed))
+
+        # 4. EOS Proxy Card
         if eos:
             content_layout.addWidget(self._create_eos_card())
 
-        # 4. Goldberg Emulator Card
+        # 5. Goldberg Emulator Card
         if goldberg:
             content_layout.addWidget(self._create_goldberg_card())
 
@@ -294,6 +299,42 @@ class AtomMigrationComplicationsDialog(QDialog):
             "and genuine Steam binaries restored from <code>.valve</code> backups, because native Steam requires "
             "authentic Steamworks binaries and will otherwise fail or overwrite them."
         )
+        desc.setWordWrap(True)
+        desc.setTextFormat(Qt.TextFormat.RichText)
+        desc.setStyleSheet("font-size: 8.5pt; color: #D0D0D8; border: none; background: transparent;")
+        card_layout.addWidget(desc)
+
+        return card
+
+    def _create_unkeyed_card(self, unkeyed_info: Dict[str, Any]) -> QFrame:
+        card = self._create_card_frame()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(8)
+
+        title = QLabel("⚠️ Missing Decryption Keys")
+        title.setStyleSheet("font-weight: bold; font-size: 9.5pt; color: #FFAA33; border: none;")
+        card_layout.addWidget(title)
+
+        unkeyed_depots = unkeyed_info.get("unkeyed_depots", [])
+        has_keys = unkeyed_info.get("has_keys", True)
+
+        if not has_keys:
+            desc_text = (
+                "<b>Warning:</b> No valid decryption keys were found for this game. "
+                "Steam client cannot download game files without keys and will show 'Depot without key' errors. "
+                "Existing local files will be preserved, but Steam updates will fail until keys become available."
+            )
+        else:
+            depots_str = ", ".join(str(d) for d in unkeyed_depots)
+            desc_text = (
+                f"<b>Warning:</b> Decryption keys are missing for depot(s): <code>{depots_str}</code>.<br>"
+                "To prevent Steam from halting downloads with <i>'Depot without key'</i> errors, these unkeyed depots "
+                "will be <b>safely excluded</b> from SLSsteam <code>AdditionalDepots</code>. "
+                "Steam will manage the remaining keyed depots natively."
+            )
+
+        desc = QLabel(desc_text)
         desc.setWordWrap(True)
         desc.setTextFormat(Qt.TextFormat.RichText)
         desc.setStyleSheet("font-size: 8.5pt; color: #D0D0D8; border: none; background: transparent;")

@@ -227,8 +227,8 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
         # New 14-digit timestamps always sort newer than legacy 10-digit
         self.assertGreater(_timestamp_to_sort_key(ts), _timestamp_to_sort_key(legacy_newer))
 
-    def test_atom_migration_aborts_on_unkeyed_depots(self):
-        """AT0-M migration must abort without retiring markers if any required depot lacks a key."""
+    def test_atom_migration_excludes_unkeyed_depots(self):
+        """AT0-M migration safely excludes unkeyed depots from AdditionalDepots to prevent Steam errors."""
         from unittest.mock import patch, MagicMock
         from utils.plugin_games import migrate_game_to_atom
 
@@ -258,11 +258,39 @@ class TestSlsLuaConfigAndDialogs(unittest.TestCase):
                  patch("utils.plugin_games._remove_accela_markers") as remove_markers:
                 res = migrate_game_to_atom(game_data, settings=settings)
 
-            self.assertFalse(res["success"])
-            self.assertIn("1002", res["error"])
-            # Markers must NOT be removed and ACF must NOT be deleted
-            remove_markers.assert_not_called()
-            self.assertTrue(acf.exists())
+            self.assertTrue(res["success"])
+            self.assertIn("1002", res.get("excluded_depots", []))
+            # Markers should be removed since keyed depots were migrated cleanly
+            remove_markers.assert_called_once()
+            cfg_text = cfg.read_text(encoding="utf-8")
+            self.assertIn("1001", cfg_text)
+            self.assertNotIn("1002", cfg_text)
+
+    def test_collect_game_depots_filters_phantom_and_prefers_hubcap(self):
+        """collect_game_depots_and_keys must prefer Hubcap and filter phantom/0-byte/manifestless depots on DB fallback."""
+        from unittest.mock import patch, MagicMock
+        from utils.plugin_games import collect_game_depots_and_keys
+
+        # 1. Test fallback filters phantom depot (size: None, manifest_id: None)
+        mock_db = MagicMock()
+        mock_db.get_app_info.return_value = {
+            "depots": {
+                "400751": {"name": "RealContent", "size": "1000", "manifest_id": "111222333"},
+                "2447597": {"name": "UnusedCzech", "size": None, "manifest_id": None},
+            }
+        }
+        with patch("managers.db_manager.DatabaseManager", return_value=mock_db), \
+             patch("managers.depot_key_manager.DepotKeyManager.get_instance") as mock_dkm_cls, \
+             patch("pathlib.Path.exists", return_value=False):
+            mock_dkm = MagicMock()
+            mock_dkm.get_depot_keys.return_value = {"400751": "f" * 64}
+            mock_dkm_cls.return_value = mock_dkm
+
+            depots, keys, names = collect_game_depots_and_keys("400750", allow_hubcap_fetch=False)
+
+            self.assertIn("400751", depots)
+            self.assertNotIn("2447597", depots)
+            self.assertEqual(keys.get("400751"), "f" * 64)
 
     def test_lua_string_escaping_roundtrip(self):
         """Ensure special characters in Lua config strings are escaped and roundtrip safely."""

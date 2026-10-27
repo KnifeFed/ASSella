@@ -789,52 +789,6 @@ def collect_game_depots_and_keys(
     decryption_keys: Dict[str, str] = {}
     depot_names: Dict[str, str] = {}
 
-    # 1. DatabaseManager lookup
-    try:
-        from managers.db_manager import DatabaseManager
-        db = DatabaseManager()
-        app_info = db.get_app_info(appid_str, bypass_expiration=True)
-        if app_info and app_info.get("depots"):
-            for did, dinfo in app_info["depots"].items():
-                did_str = str(did)
-                if did_str not in depot_ids:
-                    depot_ids.append(did_str)
-                if isinstance(dinfo, dict) and dinfo.get("name"):
-                    depot_names[did_str] = str(dinfo["name"])
-    except Exception as e:
-        logger.debug(f"[PluginGames] DB lookup error for {appid_str}: {e}")
-
-    # 2. Local .depot files
-    depot_file = get_base_path() / "depots" / f"{appid_str}.depot"
-    if depot_file.exists():
-        try:
-            with open(depot_file, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    parts = line.strip().split(":")
-                    if parts and parts[0].strip().isdigit():
-                        did = parts[0].strip()
-                        if did not in depot_ids:
-                            depot_ids.append(did)
-                        if len(parts) > 1 and parts[1].strip() and not parts[1].strip().isdigit():
-                            depot_names[did] = parts[1].strip()
-        except Exception as e:
-            logger.debug(f"[PluginGames] Could not read .depot file for {appid_str}: {e}")
-
-    # 3. Authoritative local SQLite DepotKeyManager
-    try:
-        from managers.depot_key_manager import DepotKeyManager
-        stored_keys = DepotKeyManager.get_instance().get_depot_keys(appid_str)
-        for did, key in stored_keys.items():
-            did_str = str(did).strip()
-            key_str = str(key).strip().lower()
-            if key_str and len(key_str) == 64:
-                decryption_keys[did_str] = key_str
-                if did_str != appid_str and did_str not in depot_ids:
-                    depot_ids.append(did_str)
-    except Exception as e:
-        logger.debug(f"[PluginGames] DepotKeyManager lookup error for {appid_str}: {e}")
-
-    # 4. Extract from cached Lua or manifest zip
     def _extract_keys_and_tokens_from_lua(lua_text: str):
         for m in iter_live_matches(lua_text, r'addappid\((\d+),\s*\d+,\s*["\']([a-fA-F0-9]{64})["\']\)'):
             did, key = m.group(1), m.group(2).lower()
@@ -855,6 +809,7 @@ def collect_game_depots_and_keys(
         except Exception as e:
             logger.debug(f"[PluginGames] Could not save app token for {appid_str}: {e}")
 
+    # 1. Primary Source: Check Hubcap (cached Lua, local manifest bundle zip, or fetch from Hubcap)
     lua_file = get_base_path() / "cached_luas" / f"{appid_str}.lua"
     if lua_file.exists():
         try:
@@ -877,14 +832,9 @@ def collect_game_depots_and_keys(
         except Exception as e:
             logger.debug(f"[PluginGames] Could not read manifest zip for {appid_str}: {e}")
 
-    # 5. Filter out appid itself from depot_ids
-    depot_ids = [d for d in depot_ids if str(d) != appid_str]
-
-    # 7. If any depot is missing keys, attempt emergency Hubcap fetch
-    missing_key_depots = [d for d in depot_ids if str(d) not in decryption_keys]
-    if missing_key_depots and allow_hubcap_fetch:
+    # If Hubcap has not yet provided depots/keys and remote fetch is allowed, query Hubcap
+    if not depot_ids and allow_hubcap_fetch:
         try:
-            logger.info(f"[PluginGames] Missing keys for depot(s) {missing_key_depots} of {appid_str}. Fetching from Hubcap...")
             from core import morrenus_api
             zip_res, _ = morrenus_api.download_manifest(appid_str, force_update=True)
             if zip_res and os.path.exists(zip_res):
@@ -893,30 +843,110 @@ def collect_game_depots_and_keys(
                     for name in zf.namelist():
                         if name.endswith(".lua"):
                             lua_txt = zf.read(name).decode("utf-8", errors="ignore")
+                            _extract_keys_and_tokens_from_lua(lua_txt)
                             for m in iter_live_matches(lua_txt, r'addappid\((\d+),\s*\d+,\s*["\']([a-fA-F0-9]{64})["\']\)'):
-                                did_f, k_f = m.group(1), m.group(2).lower()
-                                fresh_keys[did_f] = k_f
+                                fresh_keys[m.group(1)] = m.group(2).lower()
                 if fresh_keys:
                     from managers.depot_key_manager import DepotKeyManager
-                    dkm = DepotKeyManager.get_instance()
-                    dkm.save_depot_keys(appid_str, fresh_keys)
-                    for did_f, k_f in fresh_keys.items():
-                        decryption_keys[did_f] = k_f
-                        if did_f != appid_str and did_f not in depot_ids:
-                            depot_ids.append(did_f)
-                    try:
-                        fresh_tokens = extract_all_tokens(lua_txt)
-                        if not fresh_tokens:
-                            s_tok = extract_token(lua_txt, appid_str)
-                            if s_tok:
-                                fresh_tokens[appid_str] = s_tok
-                        for aid, tok in fresh_tokens.items():
-                            dkm.save_app_token(aid, tok)
-                    except Exception as e:
-                        logger.debug(f"[PluginGames] Emergency token save error: {e}")
+                    DepotKeyManager.get_instance().save_depot_keys(appid_str, fresh_keys)
                     logger.info(f"[PluginGames] Recovered {len(fresh_keys)} fresh key(s) from Hubcap for {appid_str}.")
         except Exception as e:
-            logger.warning(f"[PluginGames] Hubcap emergency key recovery failed for {appid_str}: {e}")
+            logger.debug(f"[PluginGames] Hubcap manifest download failed for {appid_str}: {e}")
+
+    # 2. Merge locally stored keys from DepotKeyManager
+    try:
+        from managers.depot_key_manager import DepotKeyManager
+        stored_keys = DepotKeyManager.get_instance().get_depot_keys(appid_str)
+        for did, key in stored_keys.items():
+            did_str = str(did).strip()
+            key_str = str(key).strip().lower()
+            if key_str and len(key_str) == 64:
+                decryption_keys[did_str] = key_str
+                if did_str != appid_str and did_str not in depot_ids and not depot_ids:
+                    # Only add to depot_ids from stored_keys if Hubcap had no depots
+                    depot_ids.append(did_str)
+    except Exception as e:
+        logger.debug(f"[PluginGames] DepotKeyManager lookup error for {appid_str}: {e}")
+
+    # 3. Fallback: If Hubcap had no depots, query DatabaseManager and local .depot files
+    if not depot_ids:
+        from utils.depot_utils import is_zero_byte_depot, is_redist_or_dependency, NON_DEPOT_KEYS
+        from utils.branch_helpers import resolve_branch_manifest_gid
+
+        try:
+            from managers.db_manager import DatabaseManager
+            db = DatabaseManager()
+            app_info = db.get_app_info(appid_str, bypass_expiration=True)
+            if app_info and app_info.get("depots"):
+                for did, dinfo in app_info["depots"].items():
+                    did_str = str(did).strip()
+                    if not did_str.isdigit() or did_str in NON_DEPOT_KEYS or did_str == appid_str:
+                        continue
+                    if is_redist_or_dependency(dinfo, did_str):
+                        continue
+                    if is_zero_byte_depot(dinfo, branch="public"):
+                        continue
+                    # Ensure depot actually has a manifest on Steam
+                    has_manifest = False
+                    if isinstance(dinfo, dict):
+                        if dinfo.get("manifest_id") or dinfo.get("manifests"):
+                            has_manifest = True
+                        elif resolve_branch_manifest_gid(dinfo, "public"):
+                            has_manifest = True
+                    if not has_manifest:
+                        continue
+
+                    if did_str not in depot_ids:
+                        depot_ids.append(did_str)
+                    if isinstance(dinfo, dict) and dinfo.get("name"):
+                        depot_names[did_str] = str(dinfo["name"])
+        except Exception as e:
+            logger.debug(f"[PluginGames] DB fallback lookup error for {appid_str}: {e}")
+
+        # Local .depot files fallback
+        depot_file = get_base_path() / "depots" / f"{appid_str}.depot"
+        if depot_file.exists():
+            try:
+                with open(depot_file, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        parts = line.strip().split(":")
+                        if parts and parts[0].strip().isdigit():
+                            did = parts[0].strip()
+                            if did != appid_str and did not in depot_ids:
+                                depot_ids.append(did)
+                            if len(parts) > 1 and parts[1].strip() and not parts[1].strip().isdigit():
+                                depot_names[did] = parts[1].strip()
+            except Exception as e:
+                logger.debug(f"[PluginGames] Could not read .depot file for {appid_str}: {e}")
+
+    # 4. Enrich depot names from local .depot file or DatabaseManager
+    depot_file = get_base_path() / "depots" / f"{appid_str}.depot"
+    if depot_file.exists():
+        try:
+            with open(depot_file, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    parts = line.strip().split(":")
+                    if parts and parts[0].strip().isdigit():
+                        did = parts[0].strip()
+                        if did not in depot_names and len(parts) > 1 and parts[1].strip() and not parts[1].strip().isdigit():
+                            depot_names[did] = parts[1].strip()
+        except Exception as e:
+            pass
+
+    try:
+        from managers.db_manager import DatabaseManager
+        db = DatabaseManager()
+        app_info = db.get_app_info(appid_str, bypass_expiration=True)
+        if app_info and app_info.get("depots"):
+            for did, dinfo in app_info["depots"].items():
+                did_str = str(did)
+                if did_str not in depot_names and isinstance(dinfo, dict) and dinfo.get("name"):
+                    depot_names[did_str] = str(dinfo["name"])
+    except Exception as e:
+        pass
+
+    # 5. Filter out appid itself from depot_ids
+    depot_ids = [d for d in depot_ids if str(d) != appid_str]
 
     return depot_ids, decryption_keys, depot_names
 
@@ -1131,13 +1161,43 @@ def detect_migration_complications(game_data: Dict[str, Any], settings: Any = No
         except Exception as e:
             logger.debug(f"[PluginGames] Could not check Goldberg status for {appid_str}: {e}")
 
-    has_complications = bool(pinned_info or dlc_info or eos_active or goldberg_active)
+    # 5. Unkeyed content depots check
+    unkeyed_info = None
+    try:
+        if is_dlc:
+            if dlc_info:
+                unkeyed_depots = [
+                    d for d in dlc_info.get("depots", [])
+                    if d not in dlc_info.get("key_depot_ids", [])
+                    and d not in SHARED_REDISTS
+                ]
+                if unkeyed_depots:
+                    unkeyed_info = {
+                        "unkeyed_depots": unkeyed_depots,
+                        "has_keys": bool(dlc_info.get("key_depot_ids")),
+                    }
+        else:
+            all_depots, all_keys, _ = collect_game_depots_and_keys(
+                appid_str, game_data=game_data, allow_hubcap_fetch=True
+            )
+            valid_keys = set(all_keys.keys()) | SHARED_REDISTS
+            unkeyed_depots = [d for d in all_depots if d not in valid_keys]
+            if unkeyed_depots:
+                unkeyed_info = {
+                    "unkeyed_depots": unkeyed_depots,
+                    "has_keys": bool(all_keys),
+                }
+    except Exception as e:
+        logger.debug(f"[PluginGames] Error checking unkeyed depots for {appid_str}: {e}")
+
+    has_complications = bool(pinned_info or dlc_info or eos_active or goldberg_active or unkeyed_info)
     return {
         "has_complications": has_complications,
         "pinned": pinned_info,
         "dlc_only": dlc_info,
         "eos": eos_active,
         "goldberg": goldberg_active,
+        "unkeyed": unkeyed_info,
     }
 
 
@@ -1286,32 +1346,21 @@ def migrate_game_to_atom(
         )
 
 
-    # 3. Guard against unkeyed depots (prevent DepotWithoutKey / partial migration)
+    # 3. Guard against unkeyed depots (safely exclude from AdditionalDepots to prevent Steam DepotWithoutKey)
     valid_keys_and_redists = set(decryption_keys.keys()) | SHARED_REDISTS
     excluded_unkeyed = [d for d in depot_ids if d not in valid_keys_and_redists]
     if excluded_unkeyed:
-        logger.error(
-            f"[PluginGames] Cannot migrate '{game_name}' ({appid_str}) to AT0-M: "
-            f"Missing decryption keys for {len(excluded_unkeyed)} depot(s): {excluded_unkeyed}. "
-            "Migration aborted to prevent partial installation."
+        logger.warning(
+            f"[PluginGames] Excluded {len(excluded_unkeyed)} unkeyed depot(s) for '{game_name}' ({appid_str}) "
+            f"from AdditionalDepots to prevent Steam DepotWithoutKey errors: {excluded_unkeyed}"
         )
-        err_msg = (
-            "No valid decryption keys found"
-            if not decryption_keys
-            else f"Missing decryption keys for depot(s): {', '.join(excluded_unkeyed)}"
-        )
-        return {
-            "success": False,
-            "error": err_msg,
-            "appid": appid_str,
-            "name": game_name,
-        }
+        depot_ids = [d for d in depot_ids if d in valid_keys_and_redists]
 
     if not depot_ids and not dlc_appids:
         logger.warning(
             f"[PluginGames] Skipping '{game_name}' ({appid_str}): 0 valid decryption keys or depots available."
         )
-        return {"success": False, "error": "No valid decryption keys or depots found"}
+        return {"success": False, "error": "No valid decryption keys found", "appid": appid_str, "name": game_name}
 
     # 4. Config pre-check and registration into SLSsteam config.yaml and plugin_library.json
     cfg_path = get_user_config_path()
@@ -1463,6 +1512,8 @@ def migrate_game_to_atom(
         "depots_count": len(adopted_depots),
         "keys_count": len(adopted_keys),
         "dlc_only": is_dlc,
+        "excluded_depots": excluded_unkeyed,
+        "unkeyed_excluded": excluded_unkeyed,
     }
 
 
@@ -1504,12 +1555,15 @@ def batch_convert_games_to_atom(
         )
 
         if res.get("success"):
-            migrated.append({
+            migrated_entry = {
                 "appid": appid_str,
                 "name": game_name,
                 "depots": res.get("depots_count", 0),
                 "keys": res.get("keys_count", 0),
-            })
+            }
+            if res.get("excluded_depots"):
+                migrated_entry["excluded_depots"] = res["excluded_depots"]
+            migrated.append(migrated_entry)
             if res.get("marker_retained"):
                 markers_retained.append({
                     "appid": appid_str,
