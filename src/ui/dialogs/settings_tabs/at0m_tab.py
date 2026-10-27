@@ -540,15 +540,15 @@ def create_at0m_tab(dialog) -> QWidget:
 
     def _refresh_deploy_ui():
         from utils.plugin_manager import (
+            archive_redundant_legacy_plugins,
             get_default_interceptor_from_manifest,
             get_plugin_version,
             is_plugin_user_disabled,
         )
+        archive_redundant_legacy_plugins(auto_deploy_replacement=False)
         is_custom = dialog.settings.value("custom_plugins_advanced", False, type=bool)
         std_state = get_plugin_state("download.lua")
         space_state = get_plugin_state("spacebunny.lua")
-        if space_state == "missing":
-            space_state = get_plugin_state("spacebunny1.5.lua")
         spliced_state = get_plugin_state("spliced-tickets.lua")
         active_dl = get_active_download_plugin()
         active_lower = (active_dl or "").lower()

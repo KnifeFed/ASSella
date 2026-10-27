@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Online multiplayer and proxy guide with screenshots
 
 ### Changed
-- Standardized on prepacked spacebunny.lua (v1.8.2) instead of spacebunny1.5 across AT0-M settings and plugin manager
+- Standardized on prepacked spacebunny.lua (v1.8.2) instead of spacebunny1.5 across AT0-M settings and plugin manager, automatically archiving redundant spacebunny1.5.lua to .bak
 - Default plugin switched to spacebunny; Lobster autodeployed with AT0-M; smallcrab disabled
 - Added steamrun/opensteamtool MRC endpoints
 

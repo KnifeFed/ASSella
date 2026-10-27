@@ -439,9 +439,54 @@ def is_plugin_check_bypassed() -> bool:
         return False
 
 
+REDUNDANT_LEGACY_PLUGINS = {
+    "spacebunny1.5.lua": "spacebunny.lua",
+}
+
+
+def archive_redundant_legacy_plugins(auto_deploy_replacement: bool = True) -> List[str]:
+    """Archive any obsolete/redundant plugins (such as spacebunny1.5.lua) to .bak.
+
+    If spacebunny1.5.lua is found in any SLSsteam plugins directory, rename it
+    to spacebunny1.5.lua.bak so the canonical spacebunny.lua is used instead.
+    If auto_deploy_replacement is True and the replacement is not yet present,
+    it automatically deploys the replacement to ensure continuous operation.
+    """
+    archived = []
+    try:
+        target_dirs = get_sls_plugins_dirs()
+        for tdir in target_dirs:
+            if not tdir.is_dir():
+                continue
+            for legacy_name, replacement_name in REDUNDANT_LEGACY_PLUGINS.items():
+                legacy_file = tdir / legacy_name
+                if legacy_file.is_file():
+                    bak_file = tdir / f"{legacy_name}.bak"
+                    try:
+                        if bak_file.is_file():
+                            bak_file.unlink()
+                        legacy_file.replace(bak_file)
+                        archived.append(str(bak_file))
+                        logger.info(
+                            f"[PluginManager] Archived redundant legacy plugin {legacy_file.name} -> {bak_file.name}"
+                        )
+                        if auto_deploy_replacement and replacement_name:
+                            repl_file = tdir / replacement_name
+                            if not repl_file.is_file():
+                                deploy_plugin(replacement_name, only_if_missing=True)
+                    except Exception as err:
+                        logger.warning(
+                            f"[PluginManager] Could not archive redundant plugin {legacy_file}: {err}"
+                        )
+    except Exception as exc:
+        logger.debug(f"[PluginManager] Error scanning for redundant legacy plugins: {exc}")
+    return archived
+
+
 def get_active_interceptor_filename() -> Optional[str]:
     """Find the active download interceptor plugin filename in SLSsteam plugins directory."""
     try:
+        archive_redundant_legacy_plugins(auto_deploy_replacement=False)
         target_dirs = get_sls_plugins_dirs()
         for tdir in target_dirs:
             if tdir.is_dir():
@@ -451,6 +496,7 @@ def get_active_interceptor_filename() -> Optional[str]:
                         and not p.name.endswith(".bak")
                         and not p.name.startswith(".")
                         and p.name not in ("spliced-tickets.lua", "lobster.lua", "hubcap.lua")
+                        and p.name not in REDUNDANT_LEGACY_PLUGINS
                     ):
                         return p.name
     except Exception as e:
