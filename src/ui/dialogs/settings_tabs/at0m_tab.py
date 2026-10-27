@@ -144,7 +144,7 @@ def get_available_download_plugins() -> list[tuple[str, str]]:
     sb_label = f"{sb_title} (Default)" if is_sb_default else sb_title
     std_label = f"{std_title} (download.lua) (Default)" if def_interceptor == "download.lua" else f"{std_title} (download.lua)"
 
-    sb_filename = "spacebunny.lua" if (def_interceptor == "spacebunny.lua" or get_manifest_plugin_info("spacebunny.lua")) else "spacebunny1.5.lua"
+    sb_filename = "spacebunny.lua" if (def_interceptor == "spacebunny.lua" or get_manifest_plugin_info("spacebunny.lua") or not get_manifest_plugin_info("spacebunny1.5.lua")) else "spacebunny1.5.lua"
     options = [
         (sb_label, sb_filename),
         (std_label, "download.lua"),
@@ -817,7 +817,7 @@ def create_at0m_tab(dialog) -> QWidget:
     def _on_spacebunny_clicked():
         from utils.plugin_manager import get_manifest_plugin_info, get_default_interceptor_from_manifest
         def_name = get_default_interceptor_from_manifest()
-        sb_target = "spacebunny.lua" if (get_manifest_plugin_info("spacebunny.lua") or def_name == "spacebunny.lua") else "spacebunny1.5.lua"
+        sb_target = "spacebunny.lua" if (get_manifest_plugin_info("spacebunny.lua") or def_name == "spacebunny.lua" or not get_manifest_plugin_info("spacebunny1.5.lua")) else "spacebunny1.5.lua"
         _deploy_single(sb_target, "SpaceBunny", dialog.btn_spacebunny_plugin)
 
     def _on_spliced_tickets_clicked():

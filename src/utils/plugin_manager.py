@@ -41,7 +41,7 @@ HTTP_USER_AGENT = "ASSella-PluginManager/1.0"
 
 # Known fallback plugin definitions in case network is offline and no cache exists
 FALLBACK_REQUIRED_PLUGINS = [
-    "spacebunny1.5.lua",
+    "spacebunny.lua",
     "spliced-tickets.lua",
     "lobster.lua",
     "hubcap.lua",
@@ -310,7 +310,15 @@ def get_plugin_version(filename: str) -> Optional[str]:
     # 4. Check bundled fallback
     try:
         bundled = Paths.resource(f"plugins/{filename}")
-        if bundled.is_file():
+        if not (bundled and bundled.is_file()) and filename in ("spacebunny.lua", "spacebunny1.5.lua"):
+            alt_name = "spacebunny.lua" if filename == "spacebunny1.5.lua" else "spacebunny1.5.lua"
+            try:
+                alt_bundled = Paths.resource(f"plugins/{alt_name}")
+                if alt_bundled.is_file():
+                    bundled = alt_bundled
+            except Exception:
+                pass
+        if bundled and bundled.is_file():
             v = extract_plugin_version(bundled)
             if v:
                 return v
@@ -374,7 +382,15 @@ def download_plugin(
     # Fallback to bundled plugin in res/plugins/
     try:
         bundled_file = Paths.resource(f"plugins/{filename}")
-        if bundled_file.is_file():
+        if not (bundled_file and bundled_file.is_file()) and filename in ("spacebunny.lua", "spacebunny1.5.lua"):
+            alt_name = "spacebunny.lua" if filename == "spacebunny1.5.lua" else "spacebunny1.5.lua"
+            try:
+                alt_file = Paths.resource(f"plugins/{alt_name}")
+                if alt_file.is_file():
+                    bundled_file = alt_file
+            except Exception:
+                pass
+        if bundled_file and bundled_file.is_file():
             b_hash = calculate_sha256(bundled_file)
             if not expected_sha256 or b_hash == expected_sha256:
                 shutil.copy2(bundled_file, cache_path)
@@ -569,6 +585,11 @@ def deploy_plugin(filename: str, force_download: bool = False, only_if_missing: 
         # Check if file exists in bundled resources, local plugins cache, or known local paths first
         try:
             bundled_alt = Paths.resource(f"plugins/{filename}")
+            if not (bundled_alt and bundled_alt.is_file()) and filename in ("spacebunny.lua", "spacebunny1.5.lua"):
+                alt_name = "spacebunny.lua" if filename == "spacebunny1.5.lua" else "spacebunny1.5.lua"
+                alt_p = Paths.resource(f"plugins/{alt_name}")
+                if alt_p.is_file():
+                    bundled_alt = alt_p
         except Exception:
             bundled_alt = None
 
@@ -744,7 +765,7 @@ def set_plugin_user_disabled(filename: str, disabled: bool) -> None:
 
 def get_default_interceptor_from_manifest() -> str:
     """Determine the default download interceptor from R2 manifest (or cached manifest).
-    Falls back to 'spacebunny1.5.lua' if manifest cannot be read or doesn't specify.
+    Falls back to 'spacebunny.lua' if manifest cannot be read or doesn't specify.
     """
     try:
         manifest = fetch_plugins_manifest()

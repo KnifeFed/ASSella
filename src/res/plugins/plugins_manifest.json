@@ -1,6 +1,7 @@
 {
   "manifest_version": 1,
-  "updated_at": "2026-10-23T08:01:35Z",
+  "updated_at": "2026-10-26T13:05:29Z",
+  "default_interceptor": "spacebunny.lua",
   "plugins": {
     "download.lua": {
       "name": "Download Interceptor",
@@ -10,17 +11,50 @@
       "description": "Native Steam download interception and depot streaming plugin for SLSsteam.",
       "sha256": "8e822aecfea085cfcada45b9ed0e8f2c09bc04b76c667cc1904342c9197be627",
       "size_bytes": 9166,
+      "required": false,
+      "is_default": false
+    },
+    "hubcap.lua": {
+      "name": "Hubcap Auto-Fetch",
+      "filename": "hubcap.lua",
+      "version": "1.0.0",
+      "category": "companion",
+      "description": "Standalone Hubcap key resolver. Automatically fetches missing AES decryption keys from Hubcap API.",
+      "sha256": "4819e209a401a8312a8a5f6dd71fb316ae7b51440a3963c92cd3744626e38105",
+      "size_bytes": 29651,
       "required": false
     },
-    "spacebunny1.5.lua": {
-      "name": "SpaceBunny 1.5",
-      "filename": "spacebunny1.5.lua",
-      "version": "1.5.0",
-      "category": "interceptor",
-      "description": "SLSsteam download interceptor with MRC authority hierarchy, curl timeout fixes, and monotonic clocks.",
-      "sha256": "8c9956ab351fe0a454bbf51b67334566a06ad254f62a658d7943112e19b49026",
-      "size_bytes": 35767,
+    "lobster.lua": {
+      "name": "Lobster",
+      "filename": "lobster.lua",
+      "version": "1.2.0",
+      "category": "companion",
+      "description": "SLSsteam config recovery plugin: restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates.",
+      "sha256": "a11629057839f211d6562d540c0cbffa189f93d59c80b73a7692b50a44355d7f",
+      "size_bytes": 13196,
       "required": true
+    },
+    "spacebunny.lua": {
+      "name": "SpaceBunny",
+      "filename": "spacebunny.lua",
+      "version": "1.8.2",
+      "category": "interceptor",
+      "description": "Standardized SLSsteam download interceptor with multi-provider MRC authority & circuit breakers.",
+      "sha256": "b70300b375d619ba385fb01809002574703e88e9dc67487d3a27916c0c4347e6",
+      "size_bytes": 49841,
+      "required": true,
+      "is_default": true
+    },
+    "spacebunny1.5.lua": {
+      "name": "SpaceBunny (Legacy)",
+      "filename": "spacebunny1.5.lua",
+      "version": "1.8.2",
+      "category": "interceptor",
+      "description": "Legacy alias pointing to SpaceBunny 1.8.2.",
+      "sha256": "b70300b375d619ba385fb01809002574703e88e9dc67487d3a27916c0c4347e6",
+      "size_bytes": 49841,
+      "required": false,
+      "is_default": false
     },
     "spliced-tickets.lua": {
       "name": "Spliced Tickets",
@@ -31,26 +65,6 @@
       "sha256": "62f377e39368d94612371ca62791ac90fad258a360482e6be380069ca1d94eda",
       "size_bytes": 2187,
       "required": true
-    },
-    "lobster.lua": {
-      "name": "Lobster",
-      "filename": "lobster.lua",
-      "version": "1.0.0",
-      "category": "companion",
-      "description": "SLSsteam config recovery plugin: restores AdditionalDepots and DecryptionKeys if stripped by Headcrab updates.",
-      "sha256": "d8950f939437f75a0c16d91e42256bcb36e3dfb02f034040ebcaf0c7a9bfcd02",
-      "size_bytes": 12343,
-      "required": false
-    },
-    "hubcap.lua": {
-      "name": "Hubcap",
-      "filename": "hubcap.lua",
-      "version": "1.0.0",
-      "category": "companion",
-      "description": "Hubcap manifest and key bridge plugin for SLSsteam.",
-      "sha256": "1e4fd91d3206cac1635eccb3df50796a944d9bbd8ffa5023d3005f72078a75eb",
-      "size_bytes": 29609,
-      "required": false
     }
   }
 }
