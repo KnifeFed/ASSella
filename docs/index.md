@@ -33,6 +33,7 @@ Read the full step-by-step setup in the [Installation Guide](/install).
 ## Documentation & Guides
 
 - 🎮 **[Online Multiplayer Guide](/online-multiplayer)** — Play online co-op and multiplayer games using SLSonline, Netsock, and EOS Proxy.
+- ⚡ **[Command Line Interface (CLI)](/cli)** — Headless terminal management, update checks, manifest search, and game downloads.
 - 🕹️ **[Uran (Decky Plugin)](/uran)** — Native SteamOS Game Mode companion for your Steam Deck.
 - 🎨 **[Themes Guide](/themes)** — Customize ASSella's visual appearance.
 - 📦 **[Optional Components](/optional-components)** — Goldberg, Steamless, and SLScheevo setup.
