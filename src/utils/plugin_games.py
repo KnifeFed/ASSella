@@ -931,7 +931,7 @@ def collect_game_depots_and_keys(
                         if did not in depot_names and len(parts) > 1 and parts[1].strip() and not parts[1].strip().isdigit():
                             depot_names[did] = parts[1].strip()
         except Exception as e:
-            pass
+            logger.debug(f"[PluginGames] Could not parse depot names from .depot file for {appid_str}: {e}")
 
     try:
         from managers.db_manager import DatabaseManager
@@ -943,7 +943,7 @@ def collect_game_depots_and_keys(
                 if did_str not in depot_names and isinstance(dinfo, dict) and dinfo.get("name"):
                     depot_names[did_str] = str(dinfo["name"])
     except Exception as e:
-        pass
+        logger.debug(f"[PluginGames] Could not fetch depot names from DatabaseManager for {appid_str}: {e}")
 
     # 5. Filter out appid itself from depot_ids
     depot_ids = [d for d in depot_ids if str(d) != appid_str]

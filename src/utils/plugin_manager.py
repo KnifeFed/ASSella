@@ -316,8 +316,8 @@ def get_plugin_version(filename: str) -> Optional[str]:
                 alt_bundled = Paths.resource(f"plugins/{alt_name}")
                 if alt_bundled.is_file():
                     bundled = alt_bundled
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[PluginManager] Could not check bundled fallback alias {alt_name}: {e}")
         if bundled and bundled.is_file():
             v = extract_plugin_version(bundled)
             if v:
@@ -388,8 +388,8 @@ def download_plugin(
                 alt_file = Paths.resource(f"plugins/{alt_name}")
                 if alt_file.is_file():
                     bundled_file = alt_file
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[PluginManager] Could not check bundled fallback alias {alt_name}: {e}")
         if bundled_file and bundled_file.is_file():
             b_hash = calculate_sha256(bundled_file)
             if not expected_sha256 or b_hash == expected_sha256:
